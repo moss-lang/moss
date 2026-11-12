@@ -13,7 +13,7 @@ Inductive base_class : Type :=
 | MScalar (sort : nat)
 | MReference (kind : nat).
 
-Definition machine_class := base_class.
+Definition program_data := list (nat * base_class).
 Definition address := nat.
 
 Inductive base_payload (T : Type) : Type :=
@@ -28,13 +28,23 @@ End Representation.
 Module Semantics.
   Include Audit.Semantics Representation.
   Definition address := Representation.address.
+  Notation machine_class := Representation.base_class.
+  Notation program_machines := program_platform.
+  Notation view_machines := view_platform.
   Notation MScalar := Representation.MScalar.
   Notation MReference := Representation.MReference.
-  Notation VScalar sort bits := (VMachine (Representation.Scalar sort bits)).
-  Notation VRef address header := (VMachine (Representation.Reference address header)).
+  Notation VScalar sort bits := (VOpaque (Representation.Scalar sort bits)).
+  Notation VRef address header := (VOpaque (Representation.Reference address header)).
 End Semantics.
 
 Import Semantics.
+
+Definition machine_subst (machines : list (tsym * machine_class)) : subst :=
+  map (fun q => (fst q, TRigid (fst q))) machines.
+
+Definition initial_types (machines : list (tsym * machine_class))
+    (C : Elaboration.cx) (types : subst) : Prop :=
+  types = map (fun q => (fst q, app_subst (machine_subst machines) (snd q))) (Elaboration.c_ty C).
 
 Module WasmOps.
 Local Open Scope string_scope.
@@ -692,7 +702,7 @@ Inductive code_node : Type := CodeFn (f : nat) | CodeFunctor (h : nat).
 Fixpoint ty_occurrences (tau : ty) : list (tsym * bool) :=
   let under := map (fun q : tsym * bool => (fst q, true)) in
   match tau with
-  | TUnit | TMachine _ => []
+  | TUnit | TRigid _ => []
   | TAbs t => [(t, false)]
   | TRecord fs => under ((fix go (fs : list (string * ty)) :=
       match fs with [] => [] | (_, t) :: r => ty_occurrences t ++ go r end) fs)
@@ -705,7 +715,7 @@ Fixpoint ty_occurrences (tau : ty) : list (tsym * bool) :=
 (* The nominal instances a type mentions, nested ones included. *)
 Fixpoint ty_nominals (tau : ty) : list (nsym * subst) :=
   match tau with
-  | TUnit | TMachine _ | TAbs _ => []
+  | TUnit | TRigid _ | TAbs _ => []
   | TRecord fs => (fix go (fs : list (string * ty)) :=
       match fs with [] => [] | (_, t) :: r => ty_nominals t ++ go r end) fs
   | TNom n args => (n, args) :: (fix go (l : list (tsym * ty)) :=
@@ -919,7 +929,7 @@ Local Definition explicit_reference_tag (machines : list (tsym * machine_class))
   | Some handle =>
       match lookup_subst handle arguments with
       | Some (TRecord _ | TUnit | TNom _ _ | TUnion _) => true
-      | Some (TAbs t | TMachine t) =>
+      | Some (TAbs t | TRigid t) =>
           match nlook t machines with Some (MScalar _) => true | _ => false end
       | _ => false
       end
@@ -1261,6 +1271,7 @@ Definition root_item : option (string * name) := Some ("wasm", "Gc").
 Module Static <: STATIC_PLATFORM.
   Definition root_item := root_item.
   Definition Tables := Tables.
+  Definition InitialTypes (_ : world) (P : program) := initial_types (program_machines P).
   Definition Provides := Provides.
   Definition EntryABI := EntryABI.
   Definition Admissible := Compilation.Admissible.

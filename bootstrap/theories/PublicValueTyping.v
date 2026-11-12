@@ -15,7 +15,7 @@ Definition heap_extends (old new : heap_types) : Prop :=
 Inductive handle_type (P : program_view) : nat -> ty -> Prop :=
 | MachineHandle : forall kind symbol,
     A.nlook symbol (view_machines P) = Some (MReference kind) ->
-    handle_type P kind (TMachine symbol)
+    handle_type P kind (TRigid symbol)
 | HandleUnion : forall kind member members,
     handle_type P kind member -> In member members -> handle_type P kind (TUnion members).
 
@@ -38,7 +38,7 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
 | TypedUnit : value_typed H VUnit TUnit
 | TypedScalar : forall sort bits symbol,
     A.nlook symbol (view_machines P) = Some (MScalar sort) ->
-    value_typed H (VScalar sort bits) (TMachine symbol)
+    value_typed H (VScalar sort bits) (TRigid symbol)
 | TypedRecord : forall values fields,
     fields_typed H values fields -> value_typed H (VRecord values) (TRecord fields)
 | TypedTag : forall tag arguments payload value,
@@ -53,7 +53,7 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
 | TypedRawHandle : forall kind held value symbol,
     A.nlook symbol (view_machines P) = Some (MReference kind) ->
     handle_typed H kind held value ->
-    value_typed H value (TMachine symbol)
+    value_typed H value (TRigid symbol)
 with fields_typed (H : heap_types) : list (fld * value) -> list (fld * ty) -> Prop :=
 | FieldsNil : fields_typed H [] []
 | FieldsCons : forall name value tau values fields,

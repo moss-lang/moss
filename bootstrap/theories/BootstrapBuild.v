@@ -149,7 +149,7 @@ Theorem main_environment_typed : forall env main before initial after,
   EaPlatform.main_environment env main before = Ok (initial, after) ->
   exists C needs types provisions,
     CtxOf (e_W env) main C needs /\
-    InitialTypes (AuditBase.Platform.machine_table (e_W env)) C types /\
+    AuditBase.initial_types (AuditBase.Platform.machine_table (e_W env)) C types /\
     initial = Environment types provisions /\ map fst provisions = map (rkey_of C) needs.
 Proof.
   intros env main before initial after Contexts Kind Run.
@@ -162,7 +162,7 @@ Proof.
   injection Run as <- _.
   exists formal, required,
     (map (fun q => (fst q,
-      app_subst (machine_subst (AuditBase.Platform.machine_table (e_W env))) (snd q)))
+      app_subst (AuditBase.machine_subst (AuditBase.Platform.machine_table (e_W env))) (snd q)))
       (c_ty formal)), provisions.
   split.
   - specialize (Contexts main formal required Found). rewrite Kind in Contexts. exact Contexts.
@@ -205,7 +205,7 @@ Theorem elaborate_main_environment : forall strategy bundle world program,
     d_ast d = ADFn RPlain n [] rt (Some body)) /\
   exists C needs types provisions,
     CtxOf world (program_main program) C needs /\
-    InitialTypes (program_machines program) C types /\
+    AuditBase.initial_types (program_machines program) C types /\
     program_environment program = Environment types provisions /\
     map fst provisions = map (rkey_of C) needs.
 Proof.

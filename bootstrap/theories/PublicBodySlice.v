@@ -138,7 +138,7 @@ Qed.
    (the platform's provision exists only there, lib/wasm.moss). *)
 Definition PlatformFixed (u : nat) (gfx : subst) : Prop :=
   forall x, In x (map fst (program_machines Prog)) ->
-    A.Fixed W u x -> lookup_subst x gfx = Some (TMachine x).
+    A.Fixed W u x -> lookup_subst x gfx = Some (TRigid x).
 
 (* PlatformFixed syntactically: the context the family was provided in
    (main's) records each fixed machine-type input as itself, and gfx is

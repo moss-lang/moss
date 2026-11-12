@@ -86,7 +86,7 @@ Example records_are_structural :
   app_subst [(7,TUnit)] (TRecord [("field",TAbs 7)]) = TRecord [("field",TUnit)].
 Proof. reflexivity. Qed.
 Example machine_identities_do_not_need_nominal_names :
-  app_subst [(7,TUnit)] (TMachine 7) = TMachine 7.
+  app_subst [(7,TUnit)] (TRigid 7) = TRigid 7.
 Proof. reflexivity. Qed.
 
 (* The oracle plan's N6 (AUDIT-CHANGES #94): a platform constant declared
@@ -118,14 +118,14 @@ Example no_return_without_a_function : forall W P F C exp code t,
 Proof. intros W P F C exp code t NoTarget Related. inversion Related; subst; congruence. Qed.
 
 Definition output_program := Program []
-  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TMachine 0)] [])]
+  [(2,FunctorCode [] [] [] [ITy 1] [BType 1 (TRigid 0)] [])]
   0 0 0 0 empty_environment [] [] empty_code_origins.
 Definition output_environment :=
   Environment [] [(IFun 3,FunctorClosure 2 None empty_environment None)].
 Example fresh_output_meaning_is_exported :
   Reference.apply_functor 6 (program_of output_program [] (fun _ => None))
     output_environment 3 [] [(1,9)] [] [] (Model.default_interface,initial) =
-  inl (EnvironmentWithAliases [(9,TMachine 0)] [(1,TMachine 0)] [],
+  inl (EnvironmentWithAliases [(9,TRigid 0)] [(1,TRigid 0)] [],
        (Model.default_interface,initial)).
 Proof. reflexivity. Qed.
 

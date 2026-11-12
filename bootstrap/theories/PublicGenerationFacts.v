@@ -173,7 +173,7 @@ Proof. reflexivity. Qed.
 
 Example undeclared_output_is_rejected :
   result_environment [(2,7)]
-    (bind_type empty_environment 2 (TMachine 2)) [] empty_environment = None.
+    (bind_type empty_environment 2 (TRigid 2)) [] empty_environment = None.
 Proof. reflexivity. Qed.
 
 (* Occupied and duplicate destinations: the writes shadow (the first
@@ -182,12 +182,12 @@ Proof. reflexivity. Qed.
    clauses), and gensof is injective on the outputs. *)
 Example occupied_destination_is_shadowed :
   result_environment [(2,7)]
-    (bind_type empty_environment 2 (TMachine 2)) [ITy 2] empty_environment =
-  Some (EnvironmentWithAliases [(7,TMachine 2)] [(2,TMachine 2)] []).
+    (bind_type empty_environment 2 (TRigid 2)) [ITy 2] empty_environment =
+  Some (EnvironmentWithAliases [(7,TRigid 2)] [(2,TRigid 2)] []).
 Proof. reflexivity. Qed.
 
 Example duplicate_destination_is_shadowed :
   result_environment [(2,7);(2,7)]
-    (bind_type empty_environment 2 (TMachine 2)) [ITy 2] empty_environment =
-  Some (EnvironmentWithAliases [(7,TMachine 2);(7,TMachine 2)] [(2,TMachine 2);(2,TMachine 2)] []).
+    (bind_type empty_environment 2 (TRigid 2)) [ITy 2] empty_environment =
+  Some (EnvironmentWithAliases [(7,TRigid 2);(7,TRigid 2)] [(2,TRigid 2);(2,TRigid 2)] []).
 Proof. reflexivity. Qed.

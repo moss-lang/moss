@@ -14,14 +14,14 @@ End Prims.
 Module C := PublicClosurePrototype.Compiler Prims.
 Module R := C.R.
 
-Definition captured_handle := VRef 0 (Some (0, TMachine 0)).
-Definition replacement_handle := VRef 1 (Some (0, TMachine 0)).
-Definition provider_bindings := [BType 2 (TMachine 0); BValue 3 (EVal 1)].
+Definition captured_handle := VRef 0 (Some (0, TRigid 0)).
+Definition replacement_handle := VRef 1 (Some (0, TRigid 0)).
+Definition provider_bindings := [BType 2 (TRigid 0); BValue 3 (EVal 1)].
 Definition provider_code := FunctorCode [] [] [] [ITy 2; IVal 3] provider_bindings [IVal 3].
 Definition runtime := ProgramView (fun _ => None)
   (fun h => if Nat.eqb h 20 then Some provider_code else None)
   0 0 0 [] (fun _ => None) [].
-Definition initial := Environment [(2, TMachine 1)]
+Definition initial := Environment [(2, TRigid 1)]
   [(IVal 1, ValueProvision captured_handle); (IVal 4, ValueProvision replacement_handle)].
 
 (* Capture seed, rebind the caller's seed, export a new meaning of Fresh,
@@ -64,7 +64,7 @@ Proof.
   exact (proj2_sig expression_compilation).
 Qed.
 
-Example caller_started_with_another_type : ground initial (TAbs 2) = TMachine 1.
+Example caller_started_with_another_type : ground initial (TAbs 2) = TRigid 1.
 Proof. reflexivity. Qed.
 
 Definition setup_environment :=
@@ -74,11 +74,11 @@ Definition setup_environment :=
   end.
 
 Example output_preserves_old_generation :
-  option_map (fun d => ground d (TAbs 2)) setup_environment = Some (TMachine 1).
+  option_map (fun d => ground d (TAbs 2)) setup_environment = Some (TRigid 1).
 Proof. vm_compute; reflexivity. Qed.
 
 Example output_installs_fresh_generation :
-  option_map (fun d => ground d (TAbs 7)) setup_environment = Some (TMachine 0).
+  option_map (fun d => ground d (TAbs 7)) setup_environment = Some (TRigid 0).
 Proof. vm_compute; reflexivity. Qed.
 
 Example compiled_capture_output_tag :

@@ -1242,8 +1242,7 @@ Definition source_read (snapshot : source) (name : string) : option string :=
 (* The public model has its own namespace. Implementation and proof helpers
    may import the shared surface syntax without importing this model's names. *)
 Module Type REPRESENTATION.
-  (* Each platform supplies its own machine types and opaque values. *)
-  Parameter machine_class : Type.
+  Parameter program_data : Type.
   Parameter payload : Type -> Type.
 End REPRESENTATION.
 
@@ -1270,12 +1269,10 @@ Definition usym := nat.  (* functor symbols [D55]/[D78] *)
 
 (* ===================== Types and substitutions =========================== *)
 
-(* Machine representations and structural records are not nominal declarations.
-   Type arguments are finite rows over the declaration's parameter symbols. *)
-Definition machine_class := Repr.machine_class.
+(* Type arguments are finite rows over a nominal's parameter symbols. *)
 
 Inductive ty : Type :=
-| TMachine : tsym -> ty
+| TRigid : tsym -> ty                       (* fixed abstract type identity *)
 | TRecord : list (string * ty) -> ty
 | TUnit  : ty
 | TAbs   : tsym -> ty                       (* abstract type symbol (incl. This) *)
@@ -1295,7 +1292,7 @@ Fixpoint lookup_subst (t : tsym) (s : subst) : option ty :=
 Fixpoint app_subst (s : subst) (tau : ty) {struct tau} : ty :=
   match tau with
   | TUnit => TUnit
-  | TMachine m => TMachine m
+  | TRigid m => TRigid m
   | TRecord fs => TRecord ((fix go (fs : list (string * ty)) :=
       match fs with [] => [] | (f, t) :: rest => (f, app_subst s t) :: go rest end) fs)
   | TAbs t => match lookup_subst t s with Some tau' => tau' | None => TAbs t end
@@ -1316,7 +1313,7 @@ Fixpoint app_subst (s : subst) (tau : ty) {struct tau} : ty :=
 (* Boolean equality on types. *)
 Fixpoint ty_eqb (a b : ty) {struct a} : bool :=
   match a, b with
-  | TMachine a, TMachine b => Nat.eqb a b
+  | TRigid a, TRigid b => Nat.eqb a b
   | TRecord fs, TRecord gs =>
       (fix go (fs gs : list (string * ty)) :=
         match fs, gs with
@@ -1409,7 +1406,7 @@ Inductive value : Type :=
 | VUnit : value
 | VTag : nsym -> value -> value
 | VRecord : list (fld * value) -> value
-| VMachine : Repr.payload ty -> value.
+| VOpaque : Repr.payload ty -> value.
 
 (* An operation's platform name and operands. *)
 Record op := Op { op_name : string; op_syms : list nat }.
@@ -1622,7 +1619,7 @@ Record program : Type := Program {
   program_main : nat;
   program_environment : environment;
   program_unsupported : list string;
-  program_machines : list (tsym * machine_class);
+  program_platform : Repr.program_data;
   program_origins : code_origins
 }.
 
@@ -1637,7 +1634,7 @@ Record program_view : Type := ProgramView {
   view_arguments  : list (list int);
   (* the host filesystem, an input like argv: a path's bytes, if readable *)
   view_read  : list int -> option (list int);
-  view_machines : list (tsym * machine_class)
+  view_platform : Repr.program_data
 }.
 
 Definition bind_type (d : environment) (t : tsym) (tau : ty) : environment :=
@@ -2219,7 +2216,7 @@ Definition sig_subst (s : subst) (g : fsig) : fsig :=
 (* The generations (abstract type symbols) a type mentions. *)
 Fixpoint gens (t : ty) : list nat :=
   match t with
-  | TUnit | TMachine _ => []
+  | TUnit | TRigid _ => []
   | TRecord fs => (fix go (fs : list (string * ty)) :=
       match fs with [] => [] | (_,t)::rest => gens t ++ go rest end) fs
   | TAbs g => [g]
@@ -2734,7 +2731,7 @@ Definition same_classb (M : merge) (x y : tsym) : bool :=
 
 Fixpoint ty_eqb_with (eq_abs : tsym -> tsym -> bool) (a b : ty) {struct a} : bool :=
   match a, b with
-  | TMachine a, TMachine b => Nat.eqb a b
+  | TRigid a, TRigid b => Nat.eqb a b
   | TRecord fs, TRecord gs =>
       (fix go (fs gs : list (string * ty)) :=
         match fs, gs with
@@ -2768,7 +2765,7 @@ Definition merge_eqb (M : merge) (t u : ty) : bool :=
 (* Keep the outer constructor and its labels, with children erased. *)
 Definition type_outer (t : ty) : ty :=
   match t with
-  | TMachine m => TMachine m
+  | TRigid m => TRigid m
   | TRecord fs => TRecord (map (fun p => (fst p, TUnit)) fs)
   | TUnit => TUnit
   | TAbs _ => TAbs 0
@@ -4547,13 +4544,6 @@ Record LinkBinding (W : world) (u : nat) (Cu : cx) (nsu : list item)
 (* V.7 Programs                                                              *)
 (* ======================================================================== *)
 
-(* The runtime type prefix reads the source context with each machine
-   type represented by its declaration's symbol. *)
-Definition machine_subst (machines : list (tsym * machine_class)) : subst :=
-  map (fun q => (fst q, TMachine (fst q))) machines.
-Definition InitialTypes (machines : list (tsym * machine_class)) (C : cx) (types : subst) : Prop :=
-  types = map (fun q => (fst q, app_subst (machine_subst machines) (snd q))) (c_ty C).
-
 (* [D20]: an assumed provision brings its requirements and its needs, not
    just a signature.  `AssumeCtx W s C ns`: the context the assume nesting
    of symbol s forms, and its needs (CtxOf without the world's record,
@@ -4701,7 +4691,7 @@ Definition ElaboratesWith (b : bundle) (W : world) (P : program)
     (exists d n rt body, w_decl W (program_main P) = Some d /\ d_ast d = ADFn RPlain n [] rt (Some body)) /\
     (* main's environment provides exactly main's needs; what each one is,
        the platform's provision, is checked by Linking using Provides. *)
-    (exists C ns types platform, CtxOf W (program_main P) C ns /\ InitialTypes (program_machines P) C types /\
+    (exists C ns types platform, CtxOf W (program_main P) C ns /\
        program_environment P = Environment types platform /\ map fst platform = map (rkey_of C) ns) /\
     (* Bool's symbols, when lib/bool.moss is loaded ([D45]) *)
     (LangItem W LIBool (program_bool P) /\ LangItem W LITrue (program_true P) /\
@@ -5944,7 +5934,8 @@ End Elaboration.
    and any additional restrictions on the programs it can run. *)
 Module Type STATIC_PLATFORM.
   Parameter root_item : option (string * Input.name).
-  Parameter Tables : Elaboration.world -> list (tsym * machine_class) -> Prop.
+  Parameter Tables : Elaboration.world -> Repr.program_data -> Prop.
+  Parameter InitialTypes : Elaboration.world -> program -> Elaboration.cx -> subst -> Prop.
   Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
   Parameter EntryABI : Elaboration.world -> program -> Prop.
   Parameter Admissible : Elaboration.world -> program -> Prop.
@@ -5954,9 +5945,9 @@ Module Linking (Pf : STATIC_PLATFORM).
 Import Elaboration.
 Definition Linked (W : world) (P : program) : Prop :=
   w_root_item W = Pf.root_item /\ Pf.EntryABI W P /\ Pf.Admissible W P /\
-  Pf.Tables W (program_machines P) /\
+  Pf.Tables W (program_platform P) /\
   exists context needs types entries,
-    CtxOf W (program_main P) context needs /\ InitialTypes (program_machines P) context types /\
+    CtxOf W (program_main P) context needs /\ Pf.InitialTypes W P context types /\
     program_environment P = Environment types entries /\
     Forall (fun entry => Pf.Provides W P context (fst entry) (snd entry)) entries.
 Definition Ready (P : program) : Prop :=
@@ -6000,7 +5991,7 @@ Definition program_of (p : program) (argv : list (list int))
     (rd : list int -> option (list int)) : program_view :=
   ProgramView (fun f => Elaboration.nlook f (program_functions p))
     (fun u => Elaboration.nlook u (program_functors p))
-    (program_bool p) (program_true p) (program_false p) argv rd (program_machines p).
+    (program_bool p) (program_true p) (program_false p) argv rd (program_platform p).
 
 (* ######################################################################## *)
 (* Public source-to-world contract                                           *)

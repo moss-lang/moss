@@ -171,7 +171,7 @@ Let de := CRz.CSg.FL.CF.CN.CC.LR.PA.app_env Prog argv read d code th d2.
 Let Tin := (map (fun q => (fst q, ground d (snd q))) th ++ type_meanings d)%list.
 Hypothesis Gr : forall t, incl (A.gens t) (map fst (A.c_ty Ch0)) -> ground de t = ground d (app_subst th t).
 Hypothesis MachG : forall x, In x (map fst (program_machines Prog)) ->
-  A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x.
+  A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TRigid x.
 
 (* Each position of the family's own result is the primitive its code
    installs for the item there, callable at the item's signature read at
@@ -401,7 +401,7 @@ Proof.
     (* the code reads a fixed machine input as its machine type: the root
        closure records it, and the chain keeps the root's fixed readings *)
     assert (MachG : forall x, In x (map fst (program_machines Prog)) ->
-      A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x).
+      A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TRigid x).
     { intros x Inm F0 Ix0.
       destruct (CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.closure_cases W Prog argv read state_ok _ _ _ _ _ Ok0) as [CL|[CCp|CP]].
       { destruct CL as (gg & h' & Cu' & nsu' & Cg & nsg & linktarget & dc & E & _). injection E; intros; discriminate. }

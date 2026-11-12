@@ -59,7 +59,7 @@ Definition lget (s : lsubst) (t : tsym) : option ty :=
 Fixpoint gapp (get : tsym -> option ty) (tau : ty) {struct tau} : ty :=
   match tau with
   | TUnit => TUnit
-  | TMachine m => TMachine m
+  | TRigid m => TRigid m
   | TRecord fs => TRecord ((fix go (fs : list (string * ty)) :=
       match fs with [] => [] | (f, t) :: rest => (f, gapp get t) :: go rest end) fs)
   | TAbs t => match get t with Some tau' => tau' | None => TAbs t end

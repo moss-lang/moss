@@ -21,7 +21,7 @@ Proof. intros F C gs g [_ Fa] I. rewrite Forall_forall in Fa. exact (proj1 (Fa g
 
 Fixpoint TyFormed (t : ty) : Prop :=
   match t with
-  | TMachine _ | TUnit | TAbs _ => True
+  | TRigid _ | TUnit | TAbs _ => True
   | TRecord fs => (fix go (fs : list (string * ty)) := match fs with [] => True | (_, u) :: r => TyFormed u /\ go r end) fs
   | TNom n xs => map fst xs = A.w_reqs W n /\
       (fix go (xs : list (nat * ty)) := match xs with [] => True | (_, u) :: r => TyFormed u /\ go r end) xs
@@ -1508,7 +1508,7 @@ Qed.
 
 (* A matching read off a key ([FamilyReadOff]): each value is part of the
    key's receiver, so it is ok and in scope when the receiver is. *)
-Fixpoint aty_ind (P : ty -> Prop) (Hm : forall m, P (TMachine m))
+Fixpoint aty_ind (P : ty -> Prop) (Hm : forall m, P (TRigid m))
   (Hr : forall fs, (forall f u, In (f, u) fs -> P u) -> P (TRecord fs)) (Hu : P TUnit)
   (Ha : forall g, P (TAbs g)) (Hn : forall n xs, (forall x u, In (x, u) xs -> P u) -> P (TNom n xs))
   (Hs : forall ms, (forall u, In u ms -> P u) -> P (TUnion ms)) (t : ty) {struct t} : P t.

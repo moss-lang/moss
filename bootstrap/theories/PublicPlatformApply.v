@@ -411,7 +411,7 @@ Lemma chain_fixed_ground : forall F C pa u fx Cu ns sm th gensof C' ks newgens o
   forall Ch0 needs outputs keys bindings, FamilyData h0 code Ch0 needs outputs keys bindings ->
   forall e x, In x (map fst (program_machines Prog)) ->
   A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) ->
-  ground (app_env d code th e) (TAbs x) = TMachine x.
+  ground (app_env d code th e) (TAbs x) = TRigid x.
 Proof.
   intros F C pa u fx Cu ns sm th gensof C' ks newgens outs AP rr d types H g st Pre0 code sms rms gfx [Cov Vm]
     h0 gf0 Chn Ok0 Ch0 needs outputs keys bindings FD e x Inm F0 Ix0.
@@ -779,7 +779,7 @@ Definition PrimsGroundOk : Prop :=
   forall rr H de code h0 Ch0 needs outputs keys bindings,
   FamilyData h0 code Ch0 needs outputs keys bindings ->
   (forall x, In x (map fst (program_machines Prog)) ->
-     A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TMachine x) ->
+     A.Fixed W h0 x -> In x (map fst (A.c_ty Ch0)) -> ground de (TAbs x) = TRigid x) ->
   forall key op rf m a gf, In key keys -> In (BPrimitive (A.rkey_of outputs key) op) bindings ->
   Platform.MethodPrimitive W key op -> Platform.AtKey W outputs key op ->
   key = IMth rf m a -> A.mlook rf m (A.c_mths outputs) = Some gf ->
@@ -886,7 +886,7 @@ Proof.
   assert (KMf : PublicCallRealize.KeysMatch (A.c_provisions Cf)) by (rewrite EprF, Ep; exact KM).
   assert (FxF : A.nlook u (A.c_funs Cf) = Some fx) by (unfold A.c_funs; rewrite EprF; exact Fx).
   assert (MachG : forall x, In x (map fst (program_machines Prog)) ->
-     A.Fixed W u x -> In x (map fst (A.c_ty Cu)) -> ground de (TAbs x) = TMachine x).
+     A.Fixed W u x -> In x (map fst (A.c_ty Cu)) -> ground de (TAbs x) = TRigid x).
   { intros x Inm Fx' Ix. unfold de.
     rewrite (app_env_ground d code th d1 Cu Cu f _ _ _ FB Thf (incl_refl _) (TAbs x)
       ltac:(intros y [<-|[]]; exact Ix)).

@@ -231,7 +231,7 @@ Proof.
     + exists main_decl, "main", None, main_body. split; reflexivity.
     + split.
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|reflexivity].
+        split; reflexivity.
       * split; [|split; [exact main_lang_items|split; [exact main_assumes|exact main_decls]]]. right. split.
         -- intros symbol. eapply no_platform_symbols with (lib:="bool"); simpl; auto.
         -- repeat split; reflexivity.

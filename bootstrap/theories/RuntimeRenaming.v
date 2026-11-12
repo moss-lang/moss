@@ -18,7 +18,7 @@ Variable rename : renaming.
 
 Fixpoint rename_ty (tau : ty) : ty :=
   match tau with
-  | TMachine m => TMachine (rename m)
+  | TRigid m => TRigid (rename m)
   | TRecord fields => TRecord (map (fun '(name, t) => (name, rename_ty t)) fields)
   | TUnit => TUnit
   | TAbs t => TAbs (rename t)

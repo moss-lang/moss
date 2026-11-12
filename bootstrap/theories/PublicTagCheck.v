@@ -52,7 +52,7 @@ Proof.
 Qed.
 
 Lemma lookup_machine_subst : forall machines symbol,
-  In symbol (map fst machines) -> lookup_subst symbol (A.machine_subst machines) = Some (TMachine symbol).
+  In symbol (map fst machines) -> lookup_subst symbol (AuditBase.machine_subst machines) = Some (TRigid symbol).
 Proof.
   induction machines as [|[key class] rest IH]; intros symbol Member; [contradiction|].
   cbn in *. destruct (Nat.eqb_spec symbol key) as [->|Different]; [reflexivity|].

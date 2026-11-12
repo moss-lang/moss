@@ -80,10 +80,10 @@ Hypothesis Bools : BoolSymbols W Prog.
 Variable m : subst.
 
 (* The meanings in force read each wasm machine type as its machine
-   (machine_subst supplies exactly these at the entry). *)
+   (AuditBase.machine_subst supplies exactly these at the entry). *)
 Definition MachinesGround : Prop :=
   forall symbol, In symbol (map fst (program_machines Prog)) ->
-    app_subst m (TAbs symbol) = TMachine symbol.
+    app_subst m (TAbs symbol) = TRigid symbol.
 
 (* A handle tag in a platform signature is a complete application whose
    raw-handle requirement is read as itself, as lib/wasm.moss writes it. *)
@@ -97,7 +97,7 @@ Hypothesis Ground : MachinesGround.
 
 Lemma machine_ground : forall name class t, In (name, class) Platform.initial_machines ->
   Platform.MachineType W name t ->
-  exists symbol, app_subst m t = TMachine symbol /\
+  exists symbol, app_subst m t = TRigid symbol /\
     A.nlook symbol (program_machines Prog) = Some class.
 Proof.
   intros name class t Member [symbol [Sym [_ ->]]].
@@ -109,7 +109,7 @@ Lemma raw_ground : forall name param handle class symbol args raw,
   In (name, param, handle) handle_tags -> In (handle, class) Platform.initial_machines ->
   HandleFormed (TNom symbol args) -> A.LangSym W "wasm" A.NSName name symbol ->
   A.LangSym W "wasm" A.NSName handle raw ->
-  lookup_subst raw (PublicTypeRead.smap m args) = Some (TMachine raw).
+  lookup_subst raw (PublicTypeRead.smap m args) = Some (TRigid raw).
 Proof.
   intros name param handle class symbol args raw Tag Machine Formed Sym Raw.
   destruct (Formed _ _ _ _ _ Tag Sym eq_refl) as [_ Raws].
@@ -122,7 +122,7 @@ Proof. intros args. unfold PublicTypeRead.smap. rewrite map_map. reflexivity. Qe
 
 Lemma scalar_value : forall H w symbol sort,
   A.nlook symbol (program_machines Prog) = Some (MScalar sort) ->
-  value_typed W P H w (TMachine symbol) ->
+  value_typed W P H w (TRigid symbol) ->
   exists bits, w = VScalar sort bits.
 Proof.
   intros H w symbol sort Class Typed. inversion Typed; subst;

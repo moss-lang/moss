@@ -120,7 +120,7 @@ Qed.
 (* The platform's provisions realize main's context, given the machine
    types' meanings and its primitives' callability. *)
 Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W -> Platform.Representations W Prog ->
-  A.CtxOf W (program_main Prog) C ns -> A.InitialTypes (program_machines Prog) C types ->
+  A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
   map fst platform = map (A.rkey_of C) ns ->
   Forall (fun ie => Platform.Entry W Prog C (fst ie) (snd ie)) platform ->
   (forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
@@ -137,7 +137,7 @@ Proof.
      Platform.Entry W Prog C (A.rkey_of C k) pv).
   { intros k Ik. assert (Im : In (A.rkey_of C k) (map fst platform)) by (rewrite Keys; apply in_map, Ik).
     destruct (lookup_entry_in _ _ Im) as [pv [L Ipv]]. exists pv. split; [exact L|exact (Entries _ Ipv)]. }
-  unfold A.InitialTypes in Types. subst types.
+  unfold AuditBase.initial_types in Types. subst types.
   split; [exact (entry_absorbs _ C ns _ platform Ctx)|].
   split; [|exact (conj (proj2 (function_context_merge W _ C ns Ctx)) KM)].
   split; [|split; [|split]].
@@ -172,7 +172,7 @@ Proof.
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc rms0|p held]; cbn in En; try contradiction.
     destruct sms; [contradiction|]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction. destruct rms0; [contradiction|].
     exists (FunctorClosure u' None (EnvironmentWithAliases [] [] []) None),
-      (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ground_fixed (map (fun q => (fst q, app_subst (A.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)) fx).
+      (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ground_fixed (map (fun q => (fst q, app_subst (AuditBase.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)) fx).
     destruct (ctx_fun_fixed W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
     split; [exact L|]. split; [apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CPlatform; [exact (proj1 En)| |]|].
     { (* main's table reads a fixed machine input as its machine type *)
@@ -192,7 +192,7 @@ Proof.
       cbn [app_subst]. rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook, Lv. cbn [option_map app_subst].
       rewrite (lookup_machine_subst _ _ Inm). reflexivity. }
     { (* the same, syntactically: main records a fixed machine input as itself *)
-      exists fx, (map (fun q => (fst q, app_subst (A.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)).
+      exists fx, (map (fun q => (fst q, app_subst (AuditBase.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)).
       split; [reflexivity|]. split; [exact Cov|]. split; [exact Fun|].
       intros x tx Inm Itx.
       pose proof (ctx_fun_self W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) x tx Itx) as Etx.
@@ -237,7 +237,7 @@ Lemma entry_pre : forall n F C ns g types platform H0 st0,
   PublicFormation.MentionsTyped W ->
   A.CtxOf W (program_main Prog) C ns -> FrameOk F -> A.fr_this F = None ->
   A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
-  state_ok H0 st0 -> A.InitialTypes (program_machines Prog) C types -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
+  state_ok H0 st0 -> AuditBase.initial_types (program_machines Prog) C types -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok n F C (Environment types platform) [] H0 [] st0.
 Proof.
   intros n F C ns g types platform H0 st0 Mt Ctx Frame This Ret Sig St Types Real.
@@ -248,7 +248,7 @@ Proof.
   - intros m t mu Found. rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
   - split; [intros t E; congruence|]. apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_none; [reflexivity|exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real)| |].
     + exact (proj1 (ctxof_formed W _ C ns Ctx)).
-    + unfold A.InitialTypes in Types. subst types. exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.keys_meant_map C _ (A.c_ty C) eq_refl).
+    + unfold AuditBase.initial_types in Types. subst types. exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.keys_meant_map C _ (A.c_ty C) eq_refl).
 Qed.
 End Entry.
 
@@ -276,7 +276,7 @@ Proof. intros x l m. rewrite !lookup_subst_nlook. apply nlook_app'. Qed.
 Lemma entry_primitive : forall W Prog argv read iface C ns types platform n H0 f op sg,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface op = true ->
-  A.CtxOf W (program_main Prog) C ns -> A.InitialTypes (program_machines Prog) C types ->
+  A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
   A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
   Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg) ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface) n H0
@@ -291,7 +291,7 @@ Proof.
   destruct (ctxof_formed W _ C ns Ctx) as [Form _].
   set (d0 := Environment types platform).
   set (K := A.sig_gens sg).
-  set (m' := (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings d0 K ++ A.machine_subst (program_machines Prog))%list).
+  set (m' := (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings d0 K ++ AuditBase.machine_subst (program_machines Prog))%list).
   assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground d0 (TAbs x)).
   { intros x Ix. cbn [app_subst]. unfold m'. rewrite lookup_app, (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_capture d0 K x Ix). reflexivity. }
   assert (SigK : forall t, In t (A.sg_ret sg :: A.sg_params sg) -> incl (A.gens t) K).
@@ -300,7 +300,7 @@ Proof.
   { intros t It. unfold ground. apply subst_agree_on. intros x Ix. exact (OnK x (SigK t It x Ix)). }
   assert (Ground : MachinesGround Prog m').
   { intros sym Inm. destruct (in_dec Nat.eq_dec sym K) as [Ik|Ok].
-    - rewrite (OnK sym Ik). unfold d0, ground. unfold A.InitialTypes in Types. subst types.
+    - rewrite (OnK sym Ik). unfold d0, ground. unfold AuditBase.initial_types in Types. subst types.
       cbn [type_meanings Environment app_subst]. rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook.
       assert (Ikey : In sym (map fst (A.c_ty C))) by exact (Sc sym Ik).
       destruct (keys_in (A.c_ty C) sym Ikey) as [v Lv]. rewrite Lv. cbn [option_map].
@@ -410,13 +410,13 @@ Proof.
   pose proof (Handles h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf) as Formed.
   assert (Mach : forall sym, In sym (map fst (program_machines Prog)) ->
     In sym (flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)) ->
-    ground de (TAbs sym) = TMachine sym).
+    ground de (TAbs sym) = TRigid sym).
   { intros sym Inm Is.
     destruct (Fixed h0 Ch0 outputs keys code needs bindings FD key op rf m a gf Ik AK Ek Mgf sym Inm Is) as [Fx Ix].
     exact (MachG sym Inm Fx Ix). }
   pose proof AK as AK'. rewrite Ek in AK'. destruct AK' as [sg' [M' Sig]]. rewrite Mgf in M'. injection M' as <-.
   set (K := flat_map A.gens (A.sg_ret gf :: rf :: A.sg_params gf)).
-  set (m' := (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings de K ++ A.machine_subst (program_machines Prog))%list).
+  set (m' := (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings de K ++ AuditBase.machine_subst (program_machines Prog))%list).
   assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground de (TAbs x)).
   { intros x Ix. cbn [app_subst]. unfold m'. rewrite lookup_app, (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_capture de K x Ix). reflexivity. }
   assert (G : forall t, In t (A.sg_ret gf :: rf :: A.sg_params gf) -> app_subst m' t = ground de t).
@@ -467,7 +467,7 @@ Theorem entry_safe : forall prelude
      (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
      PublicFormation.MentionsTyped W /\
      exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
-       forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> A.InitialTypes (program_machines Prog) C types ->
+       forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
          program_environment Prog = Environment types platform ->
          forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
          A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
@@ -479,8 +479,8 @@ Proof.
   intros prelude state_ok Remaining Prog iface initial fuel [source [entry [bundle [Wd [_ [Elab Link]]]]]] Compat.
   destruct (Remaining Prog iface initial bundle Wd Compat Elab Link) as [Safe [Mt [H0 [St Prims]]]].
   pose proof (proj1 (platform_linked_fields _ _) Link) as (_ & Lay & Reps & _).
-  pose proof (BodyProgramTyping.separated_elaboration_sound _ _ _ Elab) as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Types & Env & Keys) & _).
-  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
+  pose proof (BodyProgramTyping.separated_elaboration_sound _ _ _ Elab) as (_ & AllFn & _ & MainDecl & (C & ns & types & platform & Ctx & Env & Keys) & _).
+  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & Types & Env' & Entries & _).
   destruct (function_context_unique Wd _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
   unfold M.runtime. rewrite Env.
@@ -544,7 +544,7 @@ Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> P
     Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg).
 Proof.
   intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
-  destruct Elab as (resolve & Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & _ & Env & Keys) & _).
+  destruct Elab as (resolve & Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & Env & Keys) & _).
   destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].

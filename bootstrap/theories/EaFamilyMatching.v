@@ -11,7 +11,7 @@ Local Open Scope list_scope.
 Local Fixpoint ty_ind_all (P : ty -> Prop)
     (Unit : P TUnit)
     (Record : forall fields, Forall (fun q => P (snd q)) fields -> P (TRecord fields))
-    (Machine : forall n, P (TMachine n))
+    (Machine : forall n, P (TRigid n))
     (Abstract : forall n, P (TAbs n))
     (Nominal : forall n args, Forall (fun q => P (snd q)) args -> P (TNom n args))
     (Union : forall members, Forall P members -> P (TUnion members))
@@ -100,7 +100,7 @@ Proof.
     apply Forall_forall. intros row Present other before after Step.
     apply Forall_forall with (x := row) in Fields; [|exact Present].
     cbn beta in Step. destruct (String.eqb (fst row) (fst other)); [eapply Fields; exact Step|discriminate].
-  - destruct (ty_eqb (TMachine machine) actual); [injection Run as <-; apply domain_empty|discriminate].
+  - destruct (ty_eqb (TRigid machine) actual); [injection Run as <-; apply domain_empty|discriminate].
   - destruct (nmem key marks) eqn:Marker.
     + apply nmem_spec in Marker.
       destruct (lookup_subst key s) as [v|] eqn:Found.

@@ -19,7 +19,7 @@ Definition read_saved :=
   | None => TUnit
   end.
 
-Definition runtime_before := Environment [(4,TMachine 1);(5,TMachine 0)] [].
+Definition runtime_before := Environment [(4,TRigid 1);(5,TRigid 0)] [].
 Definition runtime_saved := bind_type runtime_before 2 (TAbs 4).
 Definition runtime_rebound := bind_type runtime_saved 4 (TAbs 5).
 Definition runtime_boxed := bind_type runtime_rebound 3 read_saved.
@@ -30,22 +30,22 @@ Proof. reflexivity. Qed.
 Example static_current_f64 : A.nlook 4 (A.c_ty rebind_f64) = Some (TAbs 5).
 Proof. reflexivity. Qed.
 
-Example runtime_saved_keeps_f64 : output_meaning runtime_rebound 2 = Some (TMachine 1).
+Example runtime_saved_keeps_f64 : output_meaning runtime_rebound 2 = Some (TRigid 1).
 Proof. reflexivity. Qed.
 
 Example emitted_saved_identity_keeps_f64 :
-  ground runtime_rebound read_saved = TMachine 1.
+  ground runtime_rebound read_saved = TRigid 1.
 Proof. reflexivity. Qed.
 
 Example boxed_receives_saved_meaning :
-  output_meaning runtime_boxed 3 = Some (TMachine 1).
+  output_meaning runtime_boxed 3 = Some (TRigid 1).
 Proof. reflexivity. Qed.
 
 Theorem alias_binding_preserves_old_generation :
   ground runtime_rebound read_saved = ground runtime_before read_saved.
 Proof. reflexivity. Qed.
 
-Example runtime_saved_alias_keeps_f64 : output_meaning runtime_rebound 2 = Some (TMachine 1).
+Example runtime_saved_alias_keeps_f64 : output_meaning runtime_rebound 2 = Some (TRigid 1).
 Proof. reflexivity. Qed.
 
 (* The public source rule still emits the already-read generation. It now
@@ -71,7 +71,7 @@ Qed.
 (* Independent calculations at the existing output-transfer boundary. They
    assert only how the helpers evaluate, not that this whole environment
    arises from a formed world and admissible linked body. *)
-Definition body_result := Environment [(4,TMachine 0)] [].
+Definition body_result := Environment [(4,TRigid 0)] [].
 Definition caller_after_result :=
   match result_environment [(4,6)] body_result [ITy 4] empty_environment with
   | Some result => append_environment result runtime_before
@@ -79,11 +79,11 @@ Definition caller_after_result :=
   end.
 
 Example returned_fresh_generation :
-  ground caller_after_result (TAbs 6) = TMachine 0.
+  ground caller_after_result (TAbs 6) = TRigid 0.
 Proof. reflexivity. Qed.
 
 Example returned_source_preserves_old_generation :
-  ground caller_after_result (TAbs 4) = TMachine 1.
+  ground caller_after_result (TAbs 4) = TRigid 1.
 Proof. reflexivity. Qed.
 
 Example result_transfer_preserves_old_generation :
@@ -101,5 +101,5 @@ Proof. discriminate. Qed.
 
 Example saved_f64_rejects_integer_handle :
   AuditBase.BaseCall.cast_result false 11 (Some (TNom 12 [(9, ground runtime_boxed read_saved)]))
-    [VTag 12 (VRef 0 (Some (0, TMachine 0)))] = Trap 37.
+    [VTag 12 (VRef 0 (Some (0, TRigid 0)))] = Trap 37.
 Proof. reflexivity. Qed.

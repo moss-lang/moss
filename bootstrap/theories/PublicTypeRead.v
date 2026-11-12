@@ -138,7 +138,7 @@ Lemma members_sub : forall t, (forall m, In m (members t) -> exists n xs, m = TN
   members (app_subst s t) = map (app_subst s) (members t).
 Proof.
   intros [m|fs| |g|n xs|ms] H; cbn [members].
-  - destruct (H (TMachine m) (or_introl eq_refl)) as (? & ? & E). discriminate E.
+  - destruct (H (TRigid m) (or_introl eq_refl)) as (? & ? & E). discriminate E.
   - destruct (H (TRecord fs) (or_introl eq_refl)) as (? & ? & E). discriminate E.
   - destruct (H TUnit (or_introl eq_refl)) as (? & ? & E). discriminate E.
   - destruct (H (TAbs g) (or_introl eq_refl)) as (? & ? & E). discriminate E.

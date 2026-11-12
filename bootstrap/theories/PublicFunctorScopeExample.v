@@ -79,6 +79,6 @@ Example private_input_provider_application_exports_concrete_meaning :
 Proof. reflexivity. Qed.
 
 Example supplied_formal_takes_precedence_over_capture :
-  ground (application_environment runtime empty_environment 22 [(2,TMachine 1)] private_alias)
-    (TAbs 2) = TMachine 1.
+  ground (application_environment runtime empty_environment 22 [(2,TRigid 1)] private_alias)
+    (TAbs 2) = TRigid 1.
 Proof. reflexivity. Qed.

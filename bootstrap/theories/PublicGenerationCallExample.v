@@ -6,28 +6,28 @@ From NM Require AuditBase.
 From NM Require Import Audit.
 Import AuditBase.Semantics ListNotations.
 
-Definition caller := Environment [(100,TMachine 100);(101,TMachine 101)] [].
+Definition caller := Environment [(100,TRigid 100);(101,TRigid 101)] [].
 Definition captured := EnvironmentWithAliases
-  [(10,TMachine 102);(11,TMachine 103)]
-  [(10,TMachine 102);(11,TMachine 103)] [].
+  [(10,TRigid 102);(11,TRigid 103)]
+  [(10,TRigid 102);(11,TRigid 103)] [].
 Definition called := call_environment caller [(10,TAbs 100)] captured.
 
 Example formal_input_shadows_captured_alias :
-  output_meaning called 10 = Some (TMachine 100).
+  output_meaning called 10 = Some (TRigid 100).
 Proof. reflexivity. Qed.
 
 Example formal_input_shadows_captured_generation :
-  ground called (TAbs 10) = TMachine 100.
+  ground called (TAbs 10) = TRigid 100.
 Proof. reflexivity. Qed.
 
 Example unrelated_capture_keeps_lexical_meaning :
-  output_meaning called 11 = Some (TMachine 103).
+  output_meaning called 11 = Some (TRigid 103).
 Proof. reflexivity. Qed.
 
-Definition rebound := bind_type called 10 (TMachine 101).
+Definition rebound := bind_type called 10 (TRigid 101).
 Example body_rebind_changes_only_output_reading :
-  output_meaning rebound 10 = Some (TMachine 101) /\
-  ground rebound (TAbs 10) = TMachine 100.
+  output_meaning rebound 10 = Some (TRigid 101) /\
+  ground rebound (TAbs 10) = TRigid 100.
 Proof. split; reflexivity. Qed.
 
 Definition provider_view := ProgramView (fun _ => None)
@@ -37,20 +37,20 @@ Definition applied := application_environment provider_view caller 1
   [(10,TAbs 100);(12,TAbs 101)] captured.
 
 Example provider_inputs_shadow_and_private_capture_survives :
-  output_meaning applied 10 = Some (TMachine 100) /\
-  output_meaning applied 11 = Some (TMachine 103).
+  output_meaning applied 10 = Some (TRigid 100) /\
+  output_meaning applied 11 = Some (TRigid 103).
 Proof. split; reflexivity. Qed.
 
 Example result_reads_final_alias :
   result_environment [(10,200)] rebound [ITy 10] empty_environment =
-  Some (EnvironmentWithAliases [(200,TMachine 101)] [(10,TMachine 101)] []).
+  Some (EnvironmentWithAliases [(200,TRigid 101)] [(10,TRigid 101)] []).
 Proof. reflexivity. Qed.
 
-Definition two_outputs := Environment [(10,TMachine 102);(11,TMachine 103)] [].
+Definition two_outputs := Environment [(10,TRigid 102);(11,TRigid 103)] [].
 Example output_reads_share_one_snapshot :
   result_environment [(10,11);(11,10)] two_outputs [ITy 10;ITy 11] empty_environment =
-  Some (EnvironmentWithAliases [(11,TMachine 102);(10,TMachine 103)]
-    [(10,TMachine 102);(11,TMachine 103)] []).
+  Some (EnvironmentWithAliases [(11,TRigid 102);(10,TRigid 103)]
+    [(10,TRigid 102);(11,TRigid 103)] []).
 Proof. reflexivity. Qed.
 
 (* A destination the caller already gives a meaning is shadowed (as in
@@ -59,7 +59,7 @@ Proof. reflexivity. Qed.
    (PublicLinkResults.dest_scope; scratch/orch/results2-AUDIT.md). *)
 Example output_shadows_callers_generation :
   result_environment [(10,100)] called [ITy 10] empty_environment =
-  Some (EnvironmentWithAliases [(100,TMachine 100)] [(10,TMachine 100)] []).
+  Some (EnvironmentWithAliases [(100,TRigid 100)] [(10,TRigid 100)] []).
 Proof. reflexivity. Qed.
 
 Module Primitives <: PRIMITIVES.
@@ -70,7 +70,7 @@ Module R := Interpreter Primitives.
 Definition with_functor := install_provision (IFun 1) (FunctorClosure 1 None captured None) caller.
 Example actual_application_exports_unchanged_formal_not_stale_capture :
   R.apply_functor 3 provider_view with_functor 1 [(10,TAbs 100)] [(10,200)] [] [] tt =
-  inl (EnvironmentWithAliases [(200,TMachine 100)] [(10,TMachine 100)] [],tt).
+  inl (EnvironmentWithAliases [(200,TRigid 100)] [(10,TRigid 100)] [],tt).
 Proof. reflexivity. Qed.
 
 (* New activations receive declared inputs and lexical captures, without

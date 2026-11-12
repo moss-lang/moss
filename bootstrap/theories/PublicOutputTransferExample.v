@@ -11,7 +11,7 @@ Definition run_prim (_ : program_view) (_ : op) (_ : option ty) (_ : list value)
 End Prims.
 Module R := Interpreter Prims.
 
-Definition output_code := FunctorCode [] [] [] [ITy 2] [BType 2 (TMachine 0)] [].
+Definition output_code := FunctorCode [] [] [] [ITy 2] [BType 2 (TRigid 0)] [].
 Definition output_binding := BApply 1 [] [(2,2)] [] [].
 Definition callee := EBind output_binding EUnit.
 Definition runtime := ProgramView
@@ -32,6 +32,6 @@ Proof. reflexivity. Qed.
 (* Unrelated ambient meanings do not enter the callee's activation. *)
 Example empty_type_call_does_not_inherit_caller_generation :
   lookup_subst 2 (type_meanings
-    (call_environment (Environment [(2,TMachine 0)] []) [] empty_environment)) =
+    (call_environment (Environment [(2,TRigid 0)] []) [] empty_environment)) =
   None.
 Proof. reflexivity. Qed.

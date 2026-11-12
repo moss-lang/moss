@@ -489,7 +489,7 @@ Fixpoint show_ty_go (n : nat) (t : ty) : string :=
   | TNom g [] => sym_name g
   | TNom g xs => sym_name g ++ "[" ++ String.concat ", " (map (fun q => sym_name (fst q) ++ "=" ++ show_ty_go n' (snd q)) xs) ++ "]"
   | TUnit => "()"
-  | TMachine m => sym_name m
+  | TRigid m => sym_name m
   | TRecord fs => "{" ++ String.concat ", " (map (fun q : string * ty => String.append (fst q) (String.append ": " (show_ty_go n' (snd q)))) fs) ++ "}"
   | TUnion [] => "|"
   | TUnion ms => String.concat " | " (map (show_ty_go n') ms)

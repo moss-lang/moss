@@ -311,10 +311,10 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
   end.
 
 (* SOUND: main_environment main = Ok env -> the ElaboratesIn clause on
-   program_environment (CtxOf, InitialTypes, PlatformEntry for each need) *)
+   program_environment (CtxOf, AuditBase.initial_types, PlatformEntry for each need) *)
 Definition main_environment (main : nat) : M environment :=
   let* (C, ns) := lift (w_context W main) "the context of `main` does not form" in
-  let types := map (fun q => (fst q, app_subst (machine_subst (Platform.machine_table W)) (snd q))) (c_ty C) in
+  let types := map (fun q => (fst q, app_subst (AuditBase.machine_subst (Platform.machine_table W)) (snd q))) (c_ty C) in
   let* platform := mmap (fun k => let* v := platform_entry C (rkof C k) in ret (rkof C k, v)) ns in
   ret (Environment types platform).
 

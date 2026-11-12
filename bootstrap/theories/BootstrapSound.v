@@ -43,6 +43,8 @@ Proof.
   split; [|exact Linked].
   apply BodyProgramTyping.separated_elaboration_readback.
   unfold LegacyElaboratesIn. repeat first [assumption | split].
+  destruct Environment as (C & needs & types & provisions & Ctx & _ & Env & Keys).
+  exists C, needs, types, provisions. auto.
 Qed.
 
 Theorem loaded_build_sound_from_bodies : BodiesSound ->
