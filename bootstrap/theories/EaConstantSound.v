@@ -89,9 +89,9 @@ Proof.
     | Local : slook _ (c_locals C) = Some _ |- _ => rewrite Locals in Local; discriminate
     end.
   - match goal with
-    | Kind : kind_sym ?world ?s = Some DKUnit, D : w_decl ?world ?s = Some ?d,
+    | Bare : BareTag ?world ?s, D : w_decl ?world ?s = Some ?d,
       A : d_ast ?d = ADVal _ _ (Some _) |- _ =>
-        unfold kind_sym in Kind; rewrite D, A in Kind; discriminate
+        destruct Bare as [? Bare]; unfold ast_of in Bare; rewrite D in Bare; cbn in Bare; rewrite A in Bare; discriminate
     end.
   - congruence.
   - match goal with

@@ -73,7 +73,7 @@ Fixpoint output_item_entries (n : nat) (stk : list nat) (p : string) (ob tm : li
           let tm2 := bs ++ ob ++ tm in
           match d_ast d with
           | ADType _ => Ok ([NTy s], tm)
-          | ADUnit _ | ADTag _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => Ok ([], tm)
+          | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => Ok ([], tm)
           | ADVal _ t None =>
               let! ty0 := ty_of W fuel (d_mod d) tm2 None t in
               Ok ([NVal s ty0 (app_of W metadata_fuel s tm2)], tm)

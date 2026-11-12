@@ -232,8 +232,6 @@ Proof.
         destruct (resolve_sym W p pa) as [symbol|]; [|discriminate]. cbn [rbind] in Run.
         destruct (kind_sym W symbol) as [kind|]; [destruct kind|]; try discriminate.
         -- destruct application; [discriminate|]. change (1 <= S fuel). lia.
-        -- apply rbind_ok in Run as [bindings [Read Run]].
-           apply le_n_S. exact (BracketDepth _ _ _ _ _ Read).
         -- apply rbind_ok in Run as [d [Declaration Run]].
            destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
              receiver name parameters result body|name items|name parameters arguments results body]; try discriminate.

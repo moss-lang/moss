@@ -62,7 +62,7 @@ Definition elab_fn (f : nat) : M unit :=
                                       ("attached method receiver `" ++ rn ++ "` is not in scope") in
                        let* _ := check (match w_attached W r nm with Some f' => Nat.eqb f f' | None => false end)
                                   ("duplicate definition of `" ++ rn ++ "." ++ nm ++ "`") in
-                       let* _ := check (kind_is W r DKTag || kind_is W r DKUnit)
+                       let* _ := check (kind_is W r DKTag)
                                   ("attached method `" ++ rn ++ "." ++ nm ++ "` requires a nominal receiver (Q5); `" ++ rn ++ "` is abstract") in
                        let* args := match find (fun x => negb (is_some (nlook x (c_ty C)))) (w_reqs W r) with
                                     | Some x => fail ("type " ++ qs W x ++ " (required by " ++ qs W r ++ ") is not available in the context here")

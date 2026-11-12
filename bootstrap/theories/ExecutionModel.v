@@ -1447,7 +1447,7 @@ Inductive dkind := DKType | DKUnit | DKAlias | DKTag | DKVal | DKFn | DKCtx | DK
 
 Definition kind_of (d : adecl) : option dkind :=
   match d with
-  | ADType _ => Some DKType | ADUnit _ => Some DKUnit | ADAlias _ _ => Some DKAlias
+  | ADType _ => Some DKType | ADBareTag _ => Some DKUnit | ADAlias _ _ => Some DKAlias
   | ADTag _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
   | ADFunctor _ _ _ _ _ => Some DKFunctor
   | ADFn RPlain _ _ _ _ => Some DKFn
@@ -1466,7 +1466,7 @@ Definition filed_name (d : adecl) : option (nspace * name) :=
   | ADFn (RAttached _) _ _ _ _ => None
   | ADAssume _ _ => None
   | _ => match d with
-         | ADType n | ADUnit n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
+         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
          | ADFunctor n _ _ _ _ | ADFn _ n _ _ _ => Some (NSName, n)
          | _ => None
          end
@@ -2696,7 +2696,7 @@ Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
    this preliminary leaf-identity check. *)
 Definition result_already_provided (d : adecl) : bool :=
   match d with
-  | ADUnit _ | ADTag _ _ _ | ADAlias _ _ => true
+  | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ => true
   | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => true
   | _ => false
   end.

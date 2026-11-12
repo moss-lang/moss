@@ -358,7 +358,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@PublicEntryTop.SR.safety_from_entry);
   root (@NM.PublicTypeRead.tyof_det);
   root (@NM.PublicTypeRead.payload_det);
-  root (@NM.PublicValueTyping.unit_tag_typed);
+  root (@NM.PublicValueTyping.tagged_payload_typed);
   root (@NM.PublicBoolTyping.bool_value_shape);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.B.truthy_typed);
   root (@NM.PublicBodySafety.ctx_locals_push_distinct);
@@ -538,7 +538,7 @@ Definition certificate_roots : list {T : Type & T} := [
   root (@NM.PublicFormation.apply_abstract_formed);
   root (@NM.PublicFormation.lambda_cx_formed);
   root (@NM.PublicFormation.fn_body_formed);
-  root (@NM.PublicFormation.units_bare_of);
+  root (@NM.PublicFormation.bare_tags_of);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.AR.arms_select);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.TC.tag_preserves);
   root (@PublicEntryTop.FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.PC.callable_lower);

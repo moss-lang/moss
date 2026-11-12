@@ -223,7 +223,7 @@ Proof.
   exists pv. split.
   { rewrite (select_lookup _ _ _ _ Sdr), Fs, <- Es'. exact Lpv. }
   (* 6: F's signature and receiver mention only G's inputs *)
-  pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
+  pose proof (PublicFormation.bare_tags_of W bw Wo) as UB.
   pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   assert (FrG' : PublicFormation.FrameFormed W Fg).
   { split; [rewrite Ret|rewrite This]; exact (PublicFormation.optok_none W). }

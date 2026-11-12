@@ -607,7 +607,7 @@ Proof.
   all: try solve [eauto 8 with fe].
   all: try discriminate.
   all: try match goal with H : _ = POk _ _, Ht : Type_ _ ?t _ |- _ => is_var t; destruct t; crush end.
-  all: try solve [eapply DUnit; eauto with fe; unfold TagParams; eauto with fe].
+  all: try solve [eapply DBareTag; eauto with fe; unfold TagParams; eauto with fe].
   all: try solve [eapply DTagRecord; eauto with fe; unfold TagParams; eauto with fe].
   all: try solve [eapply DTag; eauto with fe; [unfold TagParams; eauto with fe | intros ? ?; discriminate]].
 Qed.

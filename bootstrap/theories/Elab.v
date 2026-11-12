@@ -434,7 +434,7 @@ Definition in_reify_code {A} (owner : reify_owner) (m : M A) : M A :=
         (rm_codes r) (rm_declarations r) (rm_constants r))) ;;
   ret a.
 
-Definition dummy_sym : gsym := GSym 0 0 "?" KUnit (ADUnit "?") None [] OSource.
+Definition dummy_sym : gsym := GSym 0 0 "?" KUnit (ADBareTag "?") None [] OSource.
 
 Definition sym (s : nat) : M gsym :=
   fun x => match nget (st_syms x) s with

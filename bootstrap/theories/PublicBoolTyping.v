@@ -21,13 +21,16 @@ Qed.
 Section Bool.
 Variables (W : A.world) (P : program_view).
 
-Lemma unit_member_typed : forall H value unit,
-  A.kind_sym W unit = Some A.DKUnit ->
-  value_typed W P H value (TNom unit []) -> value = VTag unit VUnit.
+Lemma bare_tag_value_shape : forall H value tag,
+  A.BareTag W tag ->
+  value_typed W P H value (TNom tag []) -> value = VTag tag VUnit.
 Proof.
-  intros H value unit Unit Typed. inversion Typed; subst.
-  - rewrite (payload_tag W _ _ _ ltac:(eassumption)) in Unit. discriminate.
-  - reflexivity.
+  intros H value tag Bare Typed. inversion Typed; subst.
+  match goal with
+  | Read : A.PayloadOf W tag [] ?payload, Inner : value_typed W P H _ ?payload |- _ =>
+    rewrite (payload_det W _ _ _ _ Read (bare_tag_payload W tag [] Bare)) in Inner;
+    now inversion Inner
+  end.
 Qed.
 
 Theorem bool_value_shape : forall H bool value,
@@ -49,9 +52,8 @@ Proof.
       destruct (Members _ Read) as [->| ->]; inversion Inner; subst end;
     match goal with Mem : List.In ?member _, MemberTyped : value_typed W P H _ ?member |- _ =>
       destruct Mem as [<-|[<-|[]]];
-      first [rewrite (unit_member_typed H _ _ TrueUnit MemberTyped)
-            |rewrite (unit_member_typed H _ _ FalseUnit MemberTyped)]; auto end.
-  - congruence.
+      first [rewrite (bare_tag_value_shape H _ _ TrueUnit MemberTyped)
+            |rewrite (bare_tag_value_shape H _ _ FalseUnit MemberTyped)]; auto end.
 Qed.
 End Bool.
 

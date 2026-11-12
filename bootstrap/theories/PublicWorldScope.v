@@ -318,15 +318,14 @@ Theorem load_world_world_of_from_requirements : forall bundle w requirements,
   let W := world_read w requirements in
   (forall symbol, NoDup (requirements symbol)) ->
   (forall symbol kind, A.kind_sym W symbol = Some kind ->
-    kind <> A.DKTag -> kind <> A.DKAlias -> kind <> A.DKType -> kind <> A.DKUnit ->
+    kind <> A.DKTag -> kind <> A.DKAlias -> kind <> A.DKType ->
     forall parameter, In parameter (requirements symbol) <-> A.AssumeTypes W symbol parameter) ->
-  (forall symbol, A.kind_sym W symbol = Some A.DKType \/ A.kind_sym W symbol = Some A.DKUnit ->
+  (forall symbol, A.kind_sym W symbol = Some A.DKType \/ A.BareTag W symbol ->
     requirements symbol = []) ->
   A.RelevanceClosed W requirements ->
   (forall candidate, A.RelevanceClosed W candidate ->
-    (forall symbol, A.kind_sym W symbol <> Some A.DKTag ->
-      A.kind_sym W symbol <> Some A.DKAlias -> candidate symbol = requirements symbol) ->
-    forall symbol, (A.kind_sym W symbol = Some A.DKTag \/ A.kind_sym W symbol = Some A.DKAlias) ->
+    (forall symbol, A.has_nominal_body W symbol = false -> candidate symbol = requirements symbol) ->
+    forall symbol, A.has_nominal_body W symbol = true ->
       incl (requirements symbol) (candidate symbol)) ->
   (forall symbol declaration parameters payload name,
     A.w_decl W symbol = Some declaration ->

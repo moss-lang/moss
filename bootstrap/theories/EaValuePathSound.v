@@ -38,8 +38,8 @@ Proof.
     receiver n params result body|n items|n params inputs outputs body] eqn:Ast;
     try discriminate Run.
   - injection Run as <- <- <-. split; [tauto|]. intros Valid _.
-    split; [exact Valid|]. eapply ExUnitTag; [exact Local|exact Resolved|].
-    unfold kind_sym. fold W. now rewrite Found, Ast.
+    split; [exact Valid|]. eapply ExBareTag; [exact Local|exact Resolved|].
+    exists n. unfold ast_of. fold W. rewrite Found. cbn. now rewrite Ast.
   - destruct initial as [init|].
     + destruct (Constants F C _ _ _ _ _ Found Ast _ _ _ Run) as [Back Checked].
       split; [exact Back|]. intros Valid Post.

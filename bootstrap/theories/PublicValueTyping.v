@@ -4,6 +4,7 @@
    to all source derivations remain separate obligations. *)
 From Stdlib Require Import List Bool String Arith.
 From NM Require AuditBase.
+From NM Require PublicTypeRead.
 From NM Require Import Audit.
 Import AuditBase.Semantics ListNotations.
 Module A := AuditBase.Semantics.Elaboration.
@@ -44,10 +45,6 @@ Inductive value_typed (H : heap_types) : value -> ty -> Prop :=
 | TypedTag : forall tag arguments payload value,
     A.PayloadOf W tag arguments payload ->
     value_typed H value payload -> value_typed H (VTag tag value) (TNom tag arguments)
-(* A unit declaration (`tag True;`) has no payload; ExUnitTag builds it
-   with no type arguments. *)
-| TypedUnitTag : forall tag,
-    A.kind_sym W tag = Some A.DKUnit -> value_typed H (VTag tag VUnit) (TNom tag [])
 | TypedUnion : forall value member members,
     value_typed H value member -> In member members -> value_typed H value (TUnion members)
 | TypedRawHandle : forall kind held value symbol,
@@ -129,23 +126,16 @@ Proof.
 Qed.
 
 Theorem tagged_payload_typed : forall H tag arguments value,
-  A.kind_sym W tag = Some A.DKTag ->
   value_typed H (VTag tag value) (TNom tag arguments) ->
   exists payload, A.PayloadOf W tag arguments payload /\ value_typed H value payload.
 Proof.
-  intros H tag arguments value Tag Typed. inversion Typed; subst.
-  - eauto.
-  - congruence.
+  intros H tag arguments value Typed. inversion Typed; subst. eauto.
 Qed.
 
-Theorem unit_tag_typed : forall H tag arguments value,
-  A.kind_sym W tag = Some A.DKUnit ->
-  value_typed H (VTag tag value) (TNom tag arguments) -> value = VUnit /\ arguments = [].
+Lemma typed_bare_tag : forall H tag,
+  A.BareTag W tag -> value_typed H (VTag tag VUnit) (TNom tag []).
 Proof.
-  intros H tag arguments value Unit Typed. inversion Typed; subst; auto;
-    match goal with Payload : A.PayloadOf _ _ _ _ |- _ =>
-      destruct Payload as [? ? d ? ? ? ? Decl Ast _]; unfold A.kind_sym in Unit;
-      rewrite Decl, Ast in Unit; discriminate end.
+  intros H tag Bare. eapply TypedTag; [now apply PublicTypeRead.bare_tag_payload|constructor].
 Qed.
 
 End Values.

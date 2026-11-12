@@ -248,7 +248,14 @@ Theorem declarations_cover_payload_reads : forall bundle E bound,
   payload_of (e_W E) (e_fuel E) tag (as_written (w_reqs (e_W E) tag)) = Ok payload.
 Proof.
   intros bundle E bound World Bounded Declarations tag payload Payload.
-  inversion Payload as [s xs d n params syntax pay Declared Ast Typed]; subst.
+  inversion Payload as [s xs d n params syntax pay Declared Body Typed]; subst.
+  destruct (d_ast d) eqn:Ast; cbn [tag_body] in Body; try discriminate Body.
+  2: {
+    injection Body as <- <- <-. inversion Typed; subst.
+    unfold payload_of, decl_of. rewrite Declared. cbn [rbind]. rewrite Ast. reflexivity.
+  }
+  assert (Tag : d_ast d = ADTag n params syntax) by (rewrite Ast; congruence).
+  clear Ast. rename Tag into Ast.
   destruct (declarations_check_tag_payload E bound tag d n params syntax Declarations
     (Bounded _ _ Declared) Declared Ast) as (other & Read).
   unfold payload_of, decl_of in Read. rewrite Declared in Read. cbn [rbind] in Read.

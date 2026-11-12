@@ -578,7 +578,7 @@ Proof.
   - intros p ns n e Hl. rewrite (@AE.wo_scope _ _ Wo p ns n e Hl). apply Scope.
   - exact (AE.wo_attached Wo).
   - exact (AE.wo_reqs_nodup Wo).
-  - intros s k Hk H1 H2 H3 H4 t. rewrite <- Assume. exact (@AE.wo_reqs_plain _ _ Wo s k Hk H1 H2 H3 H4 t).
+  - intros s k Hk H1 H2 H3 t. rewrite <- Assume. exact (@AE.wo_reqs_plain _ _ Wo s k Hk H1 H2 H3 t).
   - exact (AE.wo_reqs_none Wo).
   - apply Closed. exact (AE.wo_reqs_closed Wo).
   - intros R C. apply (@AE.wo_reqs_least _ _ Wo R). apply Closed, C.

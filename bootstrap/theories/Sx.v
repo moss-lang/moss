@@ -279,7 +279,7 @@ Fixpoint read_decl (fuel : nat) (x : sx) : res adecl :=
       | SL false [SA "O"; SA n; t] => let* t' := read_ty k t in Good (ADAlias n t')
       | SL false [SA "P"; SA n; SL true ps; t] =>
           let* ps' := rmap atom ps in let* t' := read_ty k t in Good (ADTag n ps' t')
-      | SL false [SA "Q"; SA n] => Good (ADUnit n)
+      | SL false [SA "Q"; SA n] => Good (ADBareTag n)
       | SL false [SA "R"; SA n; t; i] =>
           let* t' := read_ty k t in
           let* i' := (match i with
@@ -488,7 +488,7 @@ Fixpoint ddecl (d : adecl) : sx :=
   | ADType x => nd "N" [SA x]
   | ADAlias x t => nd "O" [SA x; dty t]
   | ADTag x ps t => nd "P" [SA x; sl (map SA ps); dty t]
-  | ADUnit x => nd "Q" [SA x]
+  | ADBareTag x => nd "Q" [SA x]
   | ADVal x t i => nd "R" [SA x; dty t; dopt dexpr i]
   | ADFn r x ps ret body =>
       nd "S" [SA (match r with RDetached => "." | RPlain => "_" | RAttached q => q end); SA x;

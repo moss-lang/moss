@@ -88,7 +88,7 @@ Inductive adecl : Type :=
 | ADType    : name -> adecl
 | ADAlias   : name -> aty -> adecl
 | ADTag     : name -> list name -> aty -> adecl
-| ADUnit    : name -> adecl
+| ADBareTag : name -> adecl
 | ADVal     : name -> aty -> option aexpr -> adecl
 | ADFn      : fnrecv -> name -> list (name * aty) -> option aty -> option ablock -> adecl
 | ADCtx     : name -> list citem -> adecl
@@ -1025,8 +1025,8 @@ Inductive Decl : list token -> adecl -> list token -> Prop :=
 | DAlias : forall ts ts1 x ts2 ts3 t ts4 ts5, Tk TYPE ts ts1 -> TkName ts1 x ts2 -> Tk EQUAL ts2 ts3 ->
     Type_ ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADAlias x t) ts5
 (* `tag x;`, without brackets: `tag x[];` is refused (D73) *)
-| DUnit : forall ts ts1 x ts2 ts3, Tk TAG ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> LBRACKET ->
-    Tk SEMI ts2 ts3 -> Decl ts (ADUnit x) ts3
+| DBareTag : forall ts ts1 x ts2 ts3, Tk TAG ts ts1 -> TkName ts1 x ts2 -> kind ts2 <> LBRACKET ->
+    Tk SEMI ts2 ts3 -> Decl ts (ADBareTag x) ts3
 | DTagRecord : forall ts ts1 x ts2 ps ts3 t ts4 ts5, Tk TAG ts ts1 -> TkName ts1 x ts2 ->
     TagParams ts2 ps ts3 -> RecordType ts3 t ts4 -> Tk SEMI ts4 ts5 -> Decl ts (ADTag x ps t) ts5
 (* a record payload is written with braces, not `({...})` (D83) *)
@@ -2276,11 +2276,11 @@ Definition Declared (b : bundle) (d : decl) : Prop :=
   Loaded b (d_mod d) /\
   exists m, module_of b (d_mod d) = Some m /\ OccursIn (f_decls (am_file m)) (d_assumes d) (d_ast d).
 
-Inductive dkind := DKType | DKUnit | DKAlias | DKTag | DKVal | DKFn | DKCtx | DKMeth | DKFunctor.
+Inductive dkind := DKType | DKAlias | DKTag | DKVal | DKFn | DKCtx | DKMeth | DKFunctor.
 
 Definition kind_of (d : adecl) : option dkind :=
   match d with
-  | ADType _ => Some DKType | ADUnit _ => Some DKUnit | ADAlias _ _ => Some DKAlias
+  | ADType _ => Some DKType | ADBareTag _ => Some DKTag | ADAlias _ _ => Some DKAlias
   | ADTag _ _ _ => Some DKTag | ADVal _ _ _ => Some DKVal | ADCtx _ _ => Some DKCtx
   | ADFunctor _ _ _ _ _ => Some DKFunctor
   | ADFn RPlain _ _ _ _ => Some DKFn
@@ -2288,7 +2288,7 @@ Definition kind_of (d : adecl) : option dkind :=
   | ADAssume _ _ => None
   end.
 
-(* The name a declaration is filed under: plain names (types, units, tags,
+(* The name a declaration is filed under: plain names (types, tags,
    aliases, vals, fns, contexts, functors) and detached methods `.m`; an
    attached method `R.m` is filed under its receiver instead ([D61]). *)
 Inductive nspace := NSName | NSDetached | NSAlias.
@@ -2299,7 +2299,7 @@ Definition filed_name (d : adecl) : option (nspace * name) :=
   | ADFn (RAttached _) _ _ _ _ => None
   | ADAssume _ _ => None
   | _ => match d with
-         | ADType n | ADUnit n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
+         | ADType n | ADBareTag n | ADAlias n _ | ADTag n _ _ | ADVal n _ _ | ADCtx n _
          | ADFunctor n _ _ _ _ | ADFn _ n _ _ _ => Some (NSName, n)
          | _ => None
          end
@@ -2364,6 +2364,10 @@ Definition kind_sym (W : world) (s : nat) : option dkind :=
   match w_decl W s with Some d => kind_of (d_ast d) | None => None end.
 
 Definition ast_of (W : world) (s : nat) : option adecl := option_map d_ast (w_decl W s).
+(* Bare tags use the path form of construction and have no parameters. *)
+Definition BareTag (W : world) (s : nat) : Prop :=
+  exists n, ast_of W s = Some (ADBareTag n).
+
 Definition mod_of (W : world) (s : nat) : string :=
   match w_decl W s with Some d => d_mod d | None => "" end.
 
@@ -2496,6 +2500,12 @@ Definition AssumeTypes (W : world) (s : nat) (t : nat) : Prop :=
 Definition nominal_body (d : adecl) : option (list name * aty) :=
   match d with ADTag _ ps t => Some (ps, t) | ADAlias _ t => Some ([], t) | _ => None end.
 
+Definition has_nominal_body (W : world) (s : nat) : bool :=
+  match ast_of W s with
+  | Some a => match nominal_body a with Some _ => true | None => false end
+  | None => false
+  end.
+
 Definition RelevanceClosed (W : world) (R : nat -> list nat) : Prop :=
   forall g d ps t, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) ->
     (forall n x, In n ps -> resolve_sym W (d_mod d) [n] = Some x -> In x (R g)) /\
@@ -2521,21 +2531,22 @@ Record WorldOf (b : bundle) (W : world) : Prop := {
      file, and the table holds exactly the declared ones ([D61]) *)
   wo_attached : forall r n s, w_attached W r n = Some s <-> AttachedDecl W r n s;
   (* requirements: of a val/fn/method/context/functor, its assume nesting's
-     type symbols; of a type or unit, none; of a tag or alias, the least
-     relevance-closed sets ([D71]), every listed name a type of its nesting
+     type symbols; of an abstract type or bare tag, none; of a declaration
+     with a nominal body, the least relevance-closed sets ([D71]), with
+     every listed name a type of its nesting
      ([D73]).  Lists have no repeats; their order is free, but fixed per
      symbol, which fixes the order of a nominal's arguments in `TNom`. *)
   wo_reqs_nodup : forall s, NoDup (w_reqs W s);
   wo_reqs_plain : forall s k, kind_sym W s = Some k ->
-      k <> DKTag -> k <> DKAlias -> k <> DKType -> k <> DKUnit ->
+      k <> DKTag -> k <> DKAlias -> k <> DKType ->
       forall t, In t (w_reqs W s) <-> AssumeTypes W s t;
-  wo_reqs_none : forall s, kind_sym W s = Some DKType \/ kind_sym W s = Some DKUnit -> w_reqs W s = [];
+  wo_reqs_none : forall s, kind_sym W s = Some DKType \/ BareTag W s -> w_reqs W s = [];
   wo_reqs_closed : RelevanceClosed W (w_reqs W);
   wo_reqs_least : forall R, RelevanceClosed W R ->
-      (* R agrees with the requirements fixed above, of everything but a
-         tag or alias (note 31) *)
-      (forall s, kind_sym W s <> Some DKTag -> kind_sym W s <> Some DKAlias -> R s = w_reqs W s) ->
-      forall g, (kind_sym W g = Some DKTag \/ kind_sym W g = Some DKAlias) -> incl (w_reqs W g) (R g);
+      (* R agrees with the fixed requirements of declarations with no
+         nominal body, including bare tags. *)
+      (forall s, has_nominal_body W s = false -> R s = w_reqs W s) ->
+      forall g, has_nominal_body W g = true -> incl (w_reqs W g) (R g);
   wo_listed : forall g d ps t n, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) -> In n ps ->
       exists x, resolve_sym W (d_mod d) [n] = Some x /\ AssumeTypes W g x;
   wo_library : w_library W = Loader.library_dir (b_prelude b)
@@ -2602,8 +2613,8 @@ Inductive TyOf (W : world) : string -> list (nat * ty) -> option ty -> aty -> ty
 | TyType  : forall p tm th pa t tau,
     resolve_sym W p pa = Some t -> kind_sym W t = Some DKType -> nlook t tm = Some tau ->
     TyOf W p tm th (ATRef pa None) tau
-| TyNom   : forall p tm th pa a g k bs args,
-    resolve_sym W p pa = Some g -> kind_sym W g = Some k -> (k = DKTag \/ k = DKUnit) ->
+| TyNom   : forall p tm th pa a g bs args,
+    resolve_sym W p pa = Some g -> kind_sym W g = Some DKTag ->
     Brackets W p tm g a bs ->
     (* the arguments: each requirement, in its fixed order, as bound or in force *)
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ tm) = Some (snd ra)) (w_reqs W g) args ->
@@ -3074,7 +3085,7 @@ Inductive ItemEntries (W : world) : string -> list (nat * ty) -> list (nat * ty)
                 (match nlook t tm with Some _ => tm | None => (t, TAbs t) :: tm end)
 | IENothing : forall p ob tm pa s k,
     resolve_sym W p pa = Some s -> kind_sym W s = Some k ->
-    (k = DKUnit \/ k = DKTag \/ k = DKAlias \/
+    (k = DKTag \/ k = DKAlias \/
      (k = DKVal /\ exists d n t i, w_decl W s = Some d /\ d_ast d = ADVal n t (Some i))) ->
     ItemEntries W p ob tm (Spec (Some pa) None None) [] tm
 | IEVal : forall p ob tm a pa s d n t ty0 bs ap,
@@ -3528,7 +3539,7 @@ Inductive OutputItemEntries (W : world) : string -> list (nat * ty) ->
 | OIENothing : forall p ob tm pa a bs s k,
     resolve_sym W p pa = Some s -> kind_sym W s = Some k ->
     OutputBrackets W p (ob ++ tm) a bs ->
-    (k = DKUnit \/ k = DKTag \/ k = DKAlias \/
+    (k = DKTag \/ k = DKAlias \/
       (k = DKVal /\ exists d n t i, w_decl W s = Some d /\ d_ast d = ADVal n t (Some i)) \/
       (k = DKFn /\ exists d r n ps rt b, w_decl W s = Some d /\
          d_ast d = ADFn r n ps rt (Some b))) ->
@@ -3970,10 +3981,18 @@ Definition operator_method (op : string) (unary : bool) : option (string * strin
     | _ => None
     end.
 
-(* the payload type of a tag at its arguments *)
+(* Bare syntax supplies the unit payload. *)
+Definition tag_body (a : adecl) : option (name * list name * aty) :=
+  match a with
+  | ADBareTag n => Some (n, [], ATUnit)
+  | ADTag n ps t => Some (n, ps, t)
+  | _ => None
+  end.
+
+(* The payload type of a tag at its arguments. *)
 Inductive PayloadOf (W : world) : nat -> list (nat * ty) -> ty -> Prop :=
 | PayTag : forall s xs d n ps t pay,
-    w_decl W s = Some d -> d_ast d = ADTag n ps t -> TyOf W (d_mod d) xs None t pay ->
+    w_decl W s = Some d -> tag_body (d_ast d) = Some (n, ps, t) -> TyOf W (d_mod d) xs None t pay ->
     PayloadOf W s xs pay.
 
 (* `let` binds an immutable local, `var` an assignable one. *)
@@ -4051,12 +4070,12 @@ Inductive Join : ty -> ty -> option ty -> ty -> Prop :=
 | JoinSame : forall a b, (b = never \/ a = b) -> a <> never -> Join a b None a.
 
 (* D78 compares raw signature leaves, recursively through contexts. Types
-   remain leaves; units, tags, aliases, and concrete values/functions do
+   remain leaves; tags, aliases, and concrete values/functions do
    not require a provision. Brackets affect later interpretations, not
    this preliminary leaf-identity check. *)
 Definition result_already_provided (d : adecl) : bool :=
   match d with
-  | ADUnit _ | ADTag _ _ _ | ADAlias _ _ => true
+  | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ => true
   | ADVal _ _ (Some _) | ADFn RPlain _ _ _ (Some _) => true
   | _ => false
   end.
@@ -4632,7 +4651,7 @@ Definition AssumedComplete (W : world) (C : cx) (ns : list item) : Prop :=
 
 (* Every symbol's assume nesting forms, with its assumed items complete.
    The oracle checks each val, fn, method, context and functor symbol's;
-   a type's, unit's, tag's or alias's nesting is checked too (criteria
+   a type's, tag's or alias's nesting is checked too (criteria
    section 7), so a nesting that holds only those is not exempt. *)
 Definition AssumesComplete (W : world) : Prop :=
   forall s k, kind_sym W s = Some k ->
@@ -4698,13 +4717,13 @@ Definition DeclFormsWith (W : world) (constant : decl -> aty -> aexpr -> Prop) (
 
 (* The language items are what the language's rules take them to be
    ([D45]): Bool is a tag with no requirements whose payload is the union of
-   its two values, True and False, distinct units. *)
+   its two values, True and False, distinct bare tags. *)
 Definition LangItemsFormed (W : world) : Prop :=
   forall symbol, LangItem W LIBool symbol ->
     exists truth falsity,
       LangItem W LITrue truth /\ LangItem W LIFalse falsity /\
-      kind_sym W symbol = Some DKTag /\ kind_sym W truth = Some DKUnit /\
-      kind_sym W falsity = Some DKUnit /\ truth <> falsity /\ w_reqs W symbol = [] /\
+      kind_sym W symbol = Some DKTag /\ BareTag W truth /\
+      BareTag W falsity /\ truth <> falsity /\ w_reqs W symbol = [] /\
       (PayloadOf W symbol [] (TUnion [TNom truth []; TNom falsity []]) \/
        PayloadOf W symbol [] (TUnion [TNom falsity []; TNom truth []])).
 
@@ -5096,12 +5115,12 @@ Inductive TypesPattern (W : world) (F : frame) (scrutinee : ty) : apat -> patter
 | TypesPatternBinder : forall n,
     resolve W (fr_mod F) [n] = None -> Named F n ->
     TypesPattern W F scrutinee (APPath [n]) (PatternBinder n scrutinee)
-| TypesPatternNominal : forall path tag kind arguments,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some kind ->
-    (kind = DKUnit \/ kind = DKTag) -> In (TNom tag arguments) (members scrutinee) ->
+| TypesPatternNominal : forall path tag arguments,
+    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    In (TNom tag arguments) (members scrutinee) ->
     TypesPattern W F scrutinee (APPath path) (PatternNominal tag)
 | TypesPatternPayload : forall path tag arguments binder payload,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    resolve_sym W (fr_mod F) path = Some tag -> ~ BareTag W tag ->
     In (TNom tag arguments) (members scrutinee) -> PayloadOf W tag arguments payload ->
     resolve W (fr_mod F) [binder] = None -> Named F binder ->
     TypesPattern W F scrutinee (APTag path (APPath [binder])) (PatternPayload tag binder payload)
@@ -5125,7 +5144,6 @@ Inductive expression_plan : Type :=
 | PlanDefinedCall (f : nat) (formal : cx) (needs : list item)
     (arguments : subst) (demands : list family_use) (call_site : cx) (args : list expression_plan)
 | PlanAbstractCall (f : nat) (args : list expression_plan)
-| PlanUnitTag (tag : nat)
 | PlanTag (tag : nat) (arguments : subst) (payload : expression_plan)
 | PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
 | PlanField (object : expression_plan) (field : fld)
@@ -5251,12 +5269,12 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     (exists n ps rt, ast_of W f = Some (ADFn RPlain n ps rt None)) ->
     nlook f (c_fns C) = Some g -> TypesArgs W F C args (sg_params g) plans ->
     TypesExpr W F C (AECall pa None args) exp (PlanAbstractCall f plans) (sg_ret g)
-| TypesUnitTag : forall F C exp path tag,
+| TypesBareTag : forall F C exp path tag,
     (forall n, path = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
-    TypesExpr W F C (AEPath path None) exp (PlanUnitTag tag) (TNom tag [])
+    resolve_sym W (fr_mod F) path = Some tag -> BareTag W tag ->
+    TypesExpr W F C (AEPath path None) exp (PlanTag tag [] PlanUnit) (TNom tag [])
 | TypesTag : forall F C exp path brackets payload tag readings arguments payload_type plan actual,
-    resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
+    resolve_sym W (fr_mod F) path = Some tag -> ~ BareTag W tag ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
     Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
     PayloadOf W tag arguments payload_type ->
@@ -5526,7 +5544,7 @@ Definition FunctionReceiver (W : world) (f : nat) (rcv : fnrecv)
     (n : name) (C : cx) (this : option ty) : Prop :=
   match rcv with
   | RAttached _ => exists r args,
-      Attached W r n f /\ (kind_sym W r = Some DKTag \/ kind_sym W r = Some DKUnit) /\
+      Attached W r n f /\ kind_sym W r = Some DKTag /\
       this = Some (TNom r args) /\
       Forall2 (fun x xa => fst xa = x /\ nlook x (c_ty C) = Some (snd xa)) (w_reqs W r) args
   | _ => this = None
@@ -5812,7 +5830,6 @@ Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
       emit_map (fun values => translate_demands C demands (translate_call call_site formal f arguments needs values))
         (emit_each (emit_expr resolve slots C) args)
   | PlanAbstractCall f args => emit_map (EInvoke f) (emit_each (emit_expr resolve slots C) args)
-  | PlanUnitTag tag => emit_only (ETag tag [] EUnit)
   | PlanTag tag arguments payload => emit_map (ETag tag arguments) (emit_expr resolve slots C payload)
   | PlanRecord tag arguments fields =>
       emit_map (fun values => ETag tag arguments (ERecord values))

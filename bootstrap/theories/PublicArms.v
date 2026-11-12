@@ -35,7 +35,7 @@ Proof.
   - left. rewrite ground_nom in T. destruct (nominal_value W P _ _ _ _ T) as [inner ->].
     exists n, xs, inner. split; [left; reflexivity|]. split; [reflexivity|rewrite ground_nom; exact T].
   - left. destruct (Formed ms eq_refl) as [Nominal _].
-    rewrite ground_union in T. inversion T as [| | | | |? member ? Member In'|]; subst.
+    rewrite ground_union in T. inversion T as [| | | |? member ? Member In'|]; subst.
     apply in_map_iff in In' as [m [<- InM]].
     rewrite Forall_forall in Nominal. destruct (Nominal m InM) as [s [xs ->]].
     rewrite ground_nom in Member. destruct (nominal_value W P _ _ _ _ Member) as [inner ->].
@@ -107,7 +107,7 @@ Lemma pat_match : forall F st pat xp binds hs ca w,
    (O.I.match_pat xp w = O.I.PNo /\ ca = false /\ forall s, In s hs -> forall inner, w <> VTag s inner)).
 Proof.
   intros F st pat xp binds hs ca w Pat Formed NotNever T.
-  destruct Pat as [|n Res Named|pa s k xs R K Kind Member
+  destruct Pat as [|n Res Named|pa s xs R K Member
                    |pa s xs y pay R K Member Pay Res Named
                    |pa s xs fs ftys bs fxs R K Member Pay Pats Distinct].
   - split; [intros s []|]. split; [discriminate|]. left. exists []; repeat split; constructor.
@@ -125,7 +125,7 @@ Proof.
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left. exists [(A.var_of F y, inner)].
       pose proof (tag_member st s xs inner T Formed NotNever Member) as TM. rewrite ground_nom in TM.
-      destruct (tagged_payload_typed W P H s _ inner K TM) as [payload [Pay' Inner]].
+      destruct (tagged_payload_typed W P H s _ inner TM) as [payload [Pay' Inner]].
       pose proof (payload_det W _ _ _ _ Pay' (payload_subst W (type_meanings d) _ _ _ Pay)) as ->.
       repeat split; repeat constructor; auto; try (intros []); exact Inner.
     + right. repeat split. intros ? [<-|[]] inner' E. injection E as E; congruence.
@@ -135,7 +135,7 @@ Proof.
     destruct (Nat.eqb_spec s s') as [<-|Different].
     + left.
       pose proof (tag_member st s xs inner T Formed NotNever Member) as TM. rewrite ground_nom in TM.
-      destruct (tagged_payload_typed W P H s _ inner K TM) as [payload [Pay' Inner]].
+      destruct (tagged_payload_typed W P H s _ inner TM) as [payload [Pay' Inner]].
       pose proof (payload_det W _ _ _ _ Pay' (payload_subst W (type_meanings d) _ _ _ Pay)) as ->.
       change (app_subst (type_meanings d) (TRecord ftys)) with (gr (TRecord ftys)) in Inner.
       rewrite ground_record in Inner.

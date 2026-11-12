@@ -28,7 +28,7 @@ Fixpoint tyof_det p tm th t a (H : TyOf W p tm th t a) {struct H} : forall b, Ty
 with br_det p tm g x l (H : Brackets W p tm g x l) {struct H} : forall l', Brackets W p tm g x l' -> l = l'.
 Proof.
   - destruct H as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g bs args R K B F|p tm th pa a g d n body bs tau R D A B T];
       intros b' H'; inversion H'; subst; clear H'.
     + reflexivity.
     + reflexivity.
@@ -94,7 +94,14 @@ Proof.
 Qed.
 
 Lemma payload_tag : forall s xs payload, PayloadOf W s xs payload -> kind_sym W s = Some DKTag.
-Proof. intros s xs payload [? ? d n ps t ? D A _]; unfold kind_sym; rewrite D, A; reflexivity. Qed.
+Proof. intros s xs payload [? ? d n ps t ? D A _]; unfold kind_sym; rewrite D.
+  destruct (d_ast d) as [| | | | | | | |]; cbn in A |- *; try discriminate; reflexivity. Qed.
+Lemma bare_tag_payload : forall tag args, BareTag W tag -> PayloadOf W tag args TUnit.
+Proof.
+  intros tag args [name Bare]. unfold ast_of in Bare.
+  destruct (w_decl W tag) as [d|] eqn:Declared; [|discriminate].
+  injection Bare as Ast. eapply PayTag; [exact Declared|rewrite Ast; reflexivity|constructor].
+Qed.
 End Det.
 
 (* A type read with meanings tm and then substituted by s is the same
@@ -160,7 +167,7 @@ with br_subst p tm g x l (H : Brackets W p tm g x l) {struct H} :
   forall tm', SubRel tm tm' -> Brackets W p tm' g x (smap l).
 Proof.
   - destruct H as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g bs args R K B F|p tm th pa a g d n body bs tau R D A B T];
       intros tm' Hs.
     + apply TyNever.
     + apply TyUnit.
@@ -181,7 +188,7 @@ Proof.
         apply map_ext_in. intros m Hm. rewrite Forall_forall in Fm. destruct (Fm m Hm) as (n & xs & ->).
         rewrite subst_nom. reflexivity.
     + eapply TyType; [exact R | exact K | rewrite Hs, L; reflexivity].
-    + rewrite subst_nom. eapply TyNom; [exact R | exact K | exact Kk | exact (br_subst _ _ _ _ _ B tm' Hs)|].
+    + rewrite subst_nom. eapply TyNom; [exact R | exact K | exact (br_subst _ _ _ _ _ B tm' Hs)|].
       pose proof (subrel_app bs tm tm' Hs) as Hs'.
       clear B. induction F as [|r ra rs ras [E1 E2] Fr IH]; [constructor|]. constructor; [|exact IH].
       split; [exact E1|]. cbn [snd]. rewrite Hs', E2. reflexivity.
@@ -229,7 +236,7 @@ with br_abs p tm h x l (D : Brackets W p tm h x l) {struct D} :
   forall k g, nlook k l = Some (TAbs g) -> exists k', nlook k' tm = Some (TAbs g).
 Proof.
   - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g0 k bs args R K Kk B F|p tm th pa a g0 d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g0 bs args R K B F|p tm th pa a g0 d n body bs tau R D A B T];
       intros g E; try discriminate.
     + left; congruence.
     + right; subst; eauto.
@@ -311,7 +318,7 @@ with br_rel p tm1 g x l1 (D : Brackets W p tm1 g x l1) {struct D} :
   forall tm2 l2, Brackets W p tm2 g x l2 -> Agree tm1 tm2 -> Forall2 Rel l1 l2.
 Proof.
   - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g bs args R K B F|p tm th pa a g d n body bs tau R D A B T];
       intros tm2 th2 t2 D2 Ag This; inversion D2; subst; clear D2.
     + reflexivity.
     + reflexivity.
@@ -480,7 +487,7 @@ with br_gens p tm h x l (D : Brackets W p tm h x l) {struct D} :
   forall g, In g (tm_gens l) -> In g (tm_gens tm).
 Proof.
   - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g0 k bs args R K Kk B F|p tm th pa a g0 d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g0 bs args R K B F|p tm th pa a g0 d n body bs tau R D A B T];
       intros g Ig; cbn [gens] in Ig.
     + contradiction.
     + contradiction.

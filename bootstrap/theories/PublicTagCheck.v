@@ -142,13 +142,11 @@ End Layout.
 
 Module Checks (Prims : PRIMITIVES) (R0 : INTERP Prims).
 Theorem tag_preserves : forall W Prog argv read d H s xs pay value,
-  (A.kind_sym W s = Some A.DKTag /\ A.PayloadOf W s xs pay /\ map fst xs = A.w_reqs W s) \/
-  (A.kind_sym W s = Some A.DKUnit /\ xs = [] /\ pay = TUnit) ->
+  A.PayloadOf W s xs pay ->
   value_typed W (program_of Prog argv read) H value (ground d pay) ->
   value_typed W (program_of Prog argv read) H (VTag s value) (ground d (TNom s xs)).
 Proof.
-  intros W Prog argv read d H s xs pay value [[Kind [Payload Keys]]|[Unit [-> ->]]] Typed.
-  - eapply TypedTag; [exact (payload_subst W (type_meanings d) _ _ _ Payload)|exact Typed].
-  - inversion Typed; subst. now apply TypedUnitTag.
+  intros W Prog argv read d H s xs pay value Payload Typed.
+  eapply TypedTag; [exact (payload_subst W (type_meanings d) _ _ _ Payload)|exact Typed].
 Qed.
 End Checks.

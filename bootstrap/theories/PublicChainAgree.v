@@ -274,7 +274,7 @@ Proof.
     + destruct (IH2 e I Pl) as (sp' & Isp & X). exists sp'. split; [right; exact Isp|exact X].
 Qed.
 
-Lemma already_kind : forall a k, kind_of a = Some k -> k = DKUnit \/ k = DKTag \/ k = DKAlias ->
+Lemma already_kind : forall a k, kind_of a = Some k -> k = DKTag \/ k = DKAlias ->
   result_already_provided a = true.
 Proof.
   intros a k K Ek. destruct a as [| | | | | |rcv n ps rt body| | ]; cbn in K; try discriminate;
@@ -295,10 +295,9 @@ Proof.
     exfalso. match goal with H : resolve_sym W p pa = Some ?x |- _ => assert (x = s0) by congruence; subst x end.
     match goal with K : kind_sym W s0 = Some ?k, O : _ \/ _ |- _ => rename K into Ks; rename O into Ok end.
     unfold kind_sym in Ks. rewrite D in Ks.
-    destruct Ok as [->|[->|[->|[[-> (d' & n' & t' & i' & D' & A')]|[-> (d' & r' & n' & ps' & rt' & b' & D' & A')]]]]].
+    destruct Ok as [->|[->|[[-> (d' & n' & t' & i' & D' & A')]|[-> (d' & r' & n' & ps' & rt' & b' & D' & A')]]]].
     + rewrite (already_kind _ _ Ks (or_introl eq_refl)) in Np. discriminate.
-    + rewrite (already_kind _ _ Ks (or_intror (or_introl eq_refl))) in Np. discriminate.
-    + rewrite (already_kind _ _ Ks (or_intror (or_intror eq_refl))) in Np. discriminate.
+    + rewrite (already_kind _ _ Ks (or_intror eq_refl)) in Np. discriminate.
     + rewrite D in D'. injection D' as <-. rewrite A' in Np. discriminate.
     + rewrite D in D'. injection D' as <-. rewrite A' in Np, Ks. destruct r'; cbn in Ks; try discriminate.
   - subst k. inversion OIE; subst; try (flat; kmis).

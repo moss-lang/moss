@@ -97,14 +97,14 @@ Inductive PatOf (W : world) (F : frame) (st : ty) : apat -> pattern -> list (nam
 | PBinder : forall n,
     resolve W (fr_mod F) [n] = None -> Named F n ->
     PatOf W F st (APPath [n]) (PAny (Some (var_of F n))) [(n, st)] [] true
-| PUnit : forall pa s k xs,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some k -> (k = DKUnit \/ k = DKTag) ->
+| PNominal : forall pa s xs,
+    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
     In (TNom s xs) (members st) ->
     PatOf W F st (APPath pa) (PHead s None []) [] [s] false
 (* `S(y)`: y is the payload, at the member's arguments; a struct tag's is a
    bare record type (note 35) *)
 | PTagBind : forall pa s xs y pay,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag -> In (TNom s xs) (members st) ->
+    resolve_sym W (fr_mod F) pa = Some s -> ~ BareTag W s -> In (TNom s xs) (members st) ->
     PayloadOf W s xs pay ->
     resolve W (fr_mod F) [y] = None -> Named F y ->
     PatOf W F st (APTag pa (APPath [y])) (PHead s (Some (var_of F y)) []) [(y, pay)] [s] false
@@ -128,9 +128,9 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
 | ExLocal : forall F C exp n t mu,
     slook n (c_locals C) = Some (t, mu) -> Named F n ->
     Ex W P F C (AEPath [n] None) exp (EVar (var_of F n)) t
-| ExUnitTag : forall F C exp pa s,
+| ExBareTag : forall F C exp pa s,
     (forall n, pa = [n] -> slook n (c_locals C) = None) ->
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKUnit ->
+    resolve_sym W (fr_mod F) pa = Some s -> BareTag W s ->
     Ex W P F C (AEPath pa None) exp (ETag s [] EUnit) (TNom s [])
 | ExVal : forall F C exp pa s d n t0 t,
     (forall n', pa = [n'] -> slook n' (c_locals C) = None) ->
@@ -151,7 +151,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     Ex W P F C (AEPath pa None) exp x t
 (* a tag applied to its payload *)
 | ExTag : forall F C exp pa a args s bs xs pay y v ty,
-    resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
+    resolve_sym W (fr_mod F) pa = Some s -> ~ BareTag W s ->
     Brackets W (fr_mod F) (c_ty C) s a bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->

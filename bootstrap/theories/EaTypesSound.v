@@ -144,13 +144,6 @@ Proof.
         -- destruct application as [parameters|]; [discriminate|].
            destruct (nlook symbol tm) as [meaning|] eqn:Lookup; [|discriminate].
            injection Run as <-. eapply TyType; eassumption.
-        -- apply rbind_ok in Run as [bindings [Brackets Run]].
-           apply rbind_ok in Run as [arguments [Arguments Run]]. injection Run as <-.
-           eapply TyNom; [exact Resolve|exact Kind|right; reflexivity|exact (BracketSound _ _ _ _ _ Brackets)|].
-           eapply rmap_sound; [|exact Arguments].
-           intros requirement argument Read. cbn [rbind] in Read.
-           destruct (nlook requirement (bindings ++ tm)) as [meaning|] eqn:Lookup; [|discriminate].
-           injection Read as <-. split; reflexivity.
         -- apply rbind_ok in Run as [d [Declaration Run]].
            destruct (d_ast d) as [items declarations|name|name body|name parameters payload|name|name value_type initial|
              receiver name parameters result body|name items|name parameters arguments results body] eqn:Ast;
@@ -160,7 +153,7 @@ Proof.
              exact (BracketSound _ _ _ _ _ Brackets)|exact (TypeSound _ _ _ _ _ Run)].
         -- apply rbind_ok in Run as [bindings [Brackets Run]].
            apply rbind_ok in Run as [arguments [Arguments Run]]. injection Run as <-.
-           eapply TyNom; [exact Resolve|exact Kind|left; reflexivity|exact (BracketSound _ _ _ _ _ Brackets)|].
+           eapply TyNom; [exact Resolve|exact Kind|exact (BracketSound _ _ _ _ _ Brackets)|].
            eapply rmap_sound; [|exact Arguments].
            intros requirement argument Read. cbn [rbind] in Read.
            destruct (nlook requirement (bindings ++ tm)) as [meaning|] eqn:Lookup; [|discriminate].
@@ -248,17 +241,26 @@ Proof.
       injection Run as <-. reflexivity.
 Qed.
 
+Lemma bare_tagb_spec : forall symbol, bare_tagb W symbol = true <-> BareTag W symbol.
+Proof.
+  intros symbol. unfold bare_tagb, BareTag.
+  destruct (ast_of W symbol) as [[]|]; split; try (intros [? H]; discriminate);
+    try (intro H; discriminate).
+  - eauto.
+  - reflexivity.
+Qed.
+
 Theorem payload_of_sound : forall fuel symbol arguments payload,
   payload_of W fuel symbol arguments = Ok payload -> PayloadOf W symbol arguments payload.
 Proof.
   intros fuel symbol arguments payload Run. unfold payload_of in Run.
   apply rbind_ok in Run as [d [Declaration Run]].
-  destruct (d_ast d) as [items declarations|name|name body|name parameters syntax|name|name value_type initial|
-    receiver name parameters result body|name items|name parameters inputs outputs body] eqn:Ast;
-    try discriminate.
-  apply rbind_ok in Run as [checked [Checked Run]].
-  eapply PayTag; [exact (decl_of_sound _ _ Declaration)|exact Ast|].
-  exact (ty_of_sound _ _ _ _ _ _ Run).
+  destruct (d_ast d) as [| | |name params syntax|name| | | |] eqn:Ast; try discriminate.
+  - apply rbind_ok in Run as [checked [Checked Run]].
+    eapply PayTag; [exact (decl_of_sound _ _ Declaration)|rewrite Ast; reflexivity|].
+    exact (ty_of_sound _ _ _ _ _ _ Run).
+  - injection Run as <-.
+    eapply PayTag; [exact (decl_of_sound _ _ Declaration)|rewrite Ast; reflexivity|constructor].
 Qed.
 
 Theorem recv_ty_sound : forall fuel receiver tm t,

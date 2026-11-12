@@ -830,7 +830,7 @@ Lemma patof_scoped : forall C F st pat xp binds hs ca, PatOf W F st pat xp binds
   forall n t, In (n, t) binds -> ScopedTy W C t.
 Proof.
   intros C F st pat xp binds hs ca Pt Sc.
-  destruct Pt as [|n R Nm|pa s k xs R K Kk Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay FP Nd];
+  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay FP Nd];
     intros n' t' Ib.
   - contradiction.
   - destruct Ib as [E|[]]. injection E as _ <-. exact Sc.
@@ -1251,7 +1251,7 @@ Variable W : A.world.
 Variable Prog : program.
 Import A.
 
-Hypothesis units_bare : UnitsBare W.
+Hypothesis bare_tags : BareTags W.
 Hypothesis family_sig_ok : FamilySigReadOffOk W.
 
 (* What a run of bind items does to the scope: it grows, by at most the
@@ -1261,7 +1261,7 @@ Definition BindScoped (F : frame) (C C' : cx) (F' : frame) (made : list nat) : P
   (forall y, In y (scope_gens C') -> In y (scope_gens C) \/ In y made) /\ fr_this F' = fr_this F.
 
 Lemma ex_ok' : forall F C a x t, Ex W Prog F C a None x t -> FormedCx W C -> FrameFormed W F -> TyOk W t.
-Proof. intros F C a x t D Fc Ff. exact (ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ D Fc Ff (optok_none W)). Qed.
+Proof. intros F C a x t D Fc Ff. exact (ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ D Fc Ff (optok_none W)). Qed.
 
 Lemma optscoped_none : forall C, OptScoped W C None.
 Proof. intros C t E. discriminate. Qed.
@@ -1405,7 +1405,7 @@ Proof.
           intros d' E. injection E as <-. apply (tyof_scoped_ctx W C _ _ _ _ T). exact (proj1 (proj2 (proj2 Cs))).
         - rewrite Ann. split; [exact (optok_none W)|exact (optscoped_none C)]. }
       destruct Od as [Od Sd].
-      pose proof (ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Ey Fc Ff Od) as Hvt.
+      pose proof (ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ Ey Fc Ff Od) as Hvt.
       assert (Ht0 : TyOk W t0 /\ ScopedTy W C t0).
       { destruct declared as [d|]; [destruct Dc as [_ ->]; exact (conj (Od d eq_refl) (Sd d eq_refl))|].
         rewrite Dc. exact (conj Hvt (ex_scoped _ _ _ _ _ _ Ey Fc Ff Cs Sd)). }
@@ -1417,7 +1417,7 @@ Proof.
     + exact (blk_scoped _ _ _ _ _ _ _ _ Rest Fc Ff Cs Se).
     + exact (blk_scoped _ _ _ _ _ _ _ _ Rest Fc Ff Cs Se).
     + intros y' [].
-    + destruct (binditems_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' Ff'].
+    + destruct (binditems_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ _ Bi Fc Ff) as [Fc' Ff'].
       destruct (binditems_scoped _ _ _ _ _ _ _ Bi Fc Ff Cs) as [Cs' [Inc [Back _]]].
       intros y' Iy. destruct (blk_scoped _ _ _ _ _ _ _ _ Rest Fc' Ff' Cs' (fun e E => scoped_mono W _ _ _ Inc (Se e E)) y' Iy)
         as [G|Im].
@@ -1426,7 +1426,7 @@ Proof.
   (* ---- BindItems ---- *)
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 B1 B2]; intros Fc Ff Cs.
     + split; [exact Cs|split; [intros y I; exact I|split; [intros y I; left; exact I|reflexivity]]].
-    + destruct (binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ B1 Fc Ff) as [Fc1 Ff1].
+    + destruct (binditem_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ _ B1 Fc Ff) as [Fc1 Ff1].
       destruct (binditem_scoped _ _ _ _ _ _ _ B1 Fc Ff Cs) as [Cs1 [Inc1 [Back1 Th1]]].
       destruct (binditems_scoped _ _ _ _ _ _ _ B2 Fc1 Ff1 Cs1) as [Cs2 [Inc2 [Back2 Th2]]].
       split; [exact Cs2|split; [intros y I; exact (Inc2 y (Inc1 y I))|split; [|rewrite Th2; exact Th1]]].

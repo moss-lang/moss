@@ -27,7 +27,7 @@ Proof.
   - exfalso. exact (empty_union_uninhabited W P H value Typed).
   - rewrite ground_union. destruct t as [m|fs| |g|n xs|parts];
       try (eapply TypedUnion; [exact Typed|apply in_map, Included; left; reflexivity]).
-    rewrite ground_union in Typed. inversion Typed as [| | | | |? member ? Member In'|]; subst.
+    rewrite ground_union in Typed. inversion Typed as [| | | |? member ? Member In'|]; subst.
     apply in_map_iff in In' as [part [<- Part]].
     eapply TypedUnion; [exact Member|apply in_map, Included, Part].
 Qed.

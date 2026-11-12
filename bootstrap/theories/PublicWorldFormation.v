@@ -93,10 +93,8 @@ Proof.
   intros s k t K Nt Na I.
   destruct (dkind_eq k DKType) as [->|Nty].
   - rewrite (@wo_reqs_none b W Wo s (or_introl K)) in I. contradiction.
-  - destruct (dkind_eq k DKUnit) as [->|Nu].
-    + rewrite (@wo_reqs_none b W Wo s (or_intror K)) in I. contradiction.
-    + apply (proj1 (@wo_reqs_plain b W Wo s k K Nt Na Nty Nu t)) in I.
-      destruct I as [d [pa [_ [_ S]]]]. exact (spec_types_typed _ _ _ S).
+  - apply (proj1 (@wo_reqs_plain b W Wo s k K Nt Na Nty t)) in I.
+    destruct I as [d [pa [_ [_ S]]]]. exact (spec_types_typed _ _ _ S).
 Qed.
 
 Lemma freein_mono : forall (R R' : nat -> list nat) p a x, (forall g, incl (R g) (R' g)) ->
@@ -118,12 +116,20 @@ Proof.
   exact (RT g x (resolve_sym_declared _ _ _ Lp Rs) I).
 Qed.
 
-Definition nominal (g : nat) : bool :=
-  match kind_sym W g with Some DKTag | Some DKAlias => true | _ => false end.
+Lemma no_nominal_body : forall s k,
+  kind_sym W s = Some k -> has_nominal_body W s = false ->
+  BareTag W s \/ (k <> DKTag /\ k <> DKAlias).
+Proof.
+  intros s k Kind NoBody. unfold has_nominal_body, BareTag, ast_of, kind_sym in *.
+  destruct (w_decl W s) as [[module ast assumes]|]; [|discriminate].
+  destruct ast as [| | | |bare_name| |[ | | ]| |]; cbn in *; try discriminate;
+    injection Kind as <-; try (right; split; discriminate).
+  left. exists bare_name. reflexivity.
+Qed.
 Definition is_typed (x : nat) : bool :=
   match kind_sym W x with Some DKType => true | _ => false end.
 Definition typed_reqs (g : nat) : list nat :=
-  if nominal g then filter is_typed (w_reqs W g) else w_reqs W g.
+  if has_nominal_body W g then filter is_typed (w_reqs W g) else w_reqs W g.
 
 Lemma is_typed_spec : forall x, is_typed x = true <-> Typed x.
 Proof.
@@ -132,29 +138,29 @@ Qed.
 
 Lemma typed_reqs_incl : forall g, incl (typed_reqs g) (w_reqs W g).
 Proof.
-  intros g y I. unfold typed_reqs in I. destruct (nominal g); [|exact I].
+  intros g y I. unfold typed_reqs in I. destruct (has_nominal_body W g); [|exact I].
   apply filter_In in I. exact (proj1 I).
 Qed.
 
 Lemma typed_reqs_typed : forall g y, w_decl W g <> None -> In y (typed_reqs g) -> Typed y.
 Proof.
-  intros g y D I. unfold typed_reqs in I. destruct (nominal g) eqn:N.
+  intros g y D I. unfold typed_reqs in I. destruct (has_nominal_body W g) eqn:N.
   - apply filter_In in I. exact (proj1 (is_typed_spec y) (proj2 I)).
   - destruct (kind_sym W g) as [k|] eqn:K; [|exfalso; exact (declared_kind g D K)].
-    apply (reqs_plain_typed g k y K); [intros ->; unfold nominal in N; rewrite K in N; discriminate
-      |intros ->; unfold nominal in N; rewrite K in N; discriminate|exact I].
+    destruct (no_nominal_body _ _ K N) as [Bare|[NotTag NotAlias]].
+    + rewrite (@wo_reqs_none b W Wo g (or_intror Bare)) in I. contradiction.
+    + eapply reqs_plain_typed; eassumption.
 Qed.
 
-Lemma nominal_body_kind : forall g d ps t, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) ->
-  nominal g = true.
+Lemma nominal_body_present : forall g d ps t, w_decl W g = Some d -> nominal_body (d_ast d) = Some (ps, t) ->
+  has_nominal_body W g = true.
 Proof.
-  intros g d ps t D N. unfold nominal, kind_sym. rewrite D.
-  destruct (d_ast d); cbn in N |- *; try discriminate; reflexivity.
+  intros g d ps t D N. unfold has_nominal_body, ast_of. rewrite D. cbn. now rewrite N.
 Qed.
 
 Lemma typed_reqs_closed : RelevanceClosed W typed_reqs.
 Proof.
-  intros g d ps t D N. pose proof (nominal_body_kind g d ps t D N) as Nom.
+  intros g d ps t D N. pose proof (nominal_body_present g d ps t D N) as Nom.
   destruct (@wo_reqs_closed b W Wo g d ps t D N) as [Listed Free]. split.
   - intros n x In' Rs. unfold typed_reqs. rewrite Nom. apply filter_In. split; [exact (Listed n x In' Rs)|].
     apply is_typed_spec. destruct (@wo_listed b W Wo g d ps t n D N In') as [x' [Rs' [d' [pa [_ [_ S]]]]]].
@@ -167,14 +173,11 @@ Qed.
 (* Every requirement of a declared symbol is a type symbol. *)
 Theorem reqs_typed : forall s t, w_decl W s <> None -> In t (w_reqs W s) -> Typed t.
 Proof.
-  intros s t D I. destruct (kind_sym W s) as [k|] eqn:K; [|exfalso; exact (declared_kind s D K)].
-  destruct (dkind_eq k DKTag) as [->|Nt]; [|destruct (dkind_eq k DKAlias) as [->|Na]];
-    [| |exact (reqs_plain_typed s k t K Nt Na I)];
-  assert (Inc : incl (w_reqs W s) (typed_reqs s))
-    by (apply (@wo_reqs_least b W Wo typed_reqs typed_reqs_closed); [|rewrite K; auto];
-        intros s' Nt' Na'; unfold typed_reqs, nominal;
-        destruct (kind_sym W s') as [[]|]; solve [reflexivity|contradiction]);
-  apply (typed_reqs_typed s t D); exact (Inc t I).
+  intros s t D I. apply (typed_reqs_typed s t D).
+  destruct (has_nominal_body W s) eqn:Body; [|unfold typed_reqs; now rewrite Body].
+  assert (Agrees : forall g, has_nominal_body W g = false -> typed_reqs g = w_reqs W g).
+  { intros g NoBody. unfold typed_reqs. now rewrite NoBody. }
+  exact (@wo_reqs_least b W Wo typed_reqs typed_reqs_closed Agrees s Body t I).
 Qed.
 
 Lemma method_named_declared : forall p r dn m, Loaded b p -> MethodNamed W p r dn m -> w_decl W m <> None.

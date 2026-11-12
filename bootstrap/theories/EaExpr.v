@@ -111,7 +111,7 @@ Fixpoint field_pats (F : frame) (g : nat) (ftys : list (fld * ty)) (fs : list (n
 (* SOUND: pat_of F st p = Ok (xp, binds, hs, catch) -> PatOf W F st p xp binds hs catch *)
 Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * ty) * list nat * bool) :=
   let tag_of pa := let! s := ropt (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not a tag") in
-                   let! _ := rcheck (kind_is W s DKUnit || kind_is W s DKTag) (bq (show_path pa) ++ " is not a matchable pattern") in
+                   let! _ := rcheck (kind_is W s DKTag) (bq (show_path pa) ++ " is not a matchable pattern") in
                    let! xs := ropt (member_with_head st s) (tag_name s ++ " is not a member of " ++ qty W st) in
                    Ok (s, xs) in
   match p with
@@ -122,23 +122,21 @@ Definition pat_of (F : frame) (st : ty) (p : apat) : er (pattern * list (name * 
                 Ok (PAny (Some (var_of F n)), [(n, st)], [], true)
       | Some _ =>
           let! (s, _) := tag_of [n] in
-          let! _ := rcheck (kind_is W s DKUnit || kind_is W s DKTag) "a pattern names a unit or a tag" in
           Ok (PHead s None [], [], [s], false)
       end
   | APPath pa =>
       let! (s, _) := tag_of pa in
-      let! _ := rcheck (kind_is W s DKUnit || kind_is W s DKTag) "a pattern names a unit or a tag" in
       Ok (PHead s None [], [], [s], false)
   | APTag pa (APPath [y]) =>
       let! (s, xs) := tag_of pa in
-      let! _ := rcheck (kind_is W s DKTag) (bq (show_path pa) ++ " is not a tag") in
+      let! _ := rcheck (negb (bare_tagb W s)) (bq (show_path pa) ++ " has no explicit payload") in
       let! pay := payload_of W fuel s xs in
       let! _ := rcheck (negb (is_some (resolve W (fr_mod F) [y]))) "a pattern binder is a declared name" in
       let! _ := rcheck (is_some (slook y (fr_var F))) "internal: a pattern binder is not numbered" in
       Ok (PHead s (Some (var_of F y)) [], [(y, pay)], [s], false)
   | APRec (Some pa) fs =>
       let! (s, xs) := tag_of pa in
-      let! _ := rcheck (kind_is W s DKTag) (bq (show_path pa) ++ " is not a tag") in
+      let! _ := rcheck (negb (bare_tagb W s)) (bq (show_path pa) ++ " has no explicit payload") in
       let! pay := payload_of W fuel s xs in
       match pay with
       | TRecord ftys =>
@@ -176,7 +174,7 @@ Definition read_global_value (F : frame) (C : cx) (pa : path) : M (expr * ty) :=
   let* s := lift (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not in scope") in
   let* d := lift (w_decl W s) "internal: unknown symbol" in
   match d_ast d with
-  | ADUnit _ => ret (ETag s [] EUnit, TNom s [])
+  | ADBareTag _ => ret (ETag s [] EUnit, TNom s [])
   | ADVal _ _ None =>
       let* t := lift (cval C s) (qs W s ++ " is not available in the context here (assume or bind it)") in ret (EVal s, t)
   | ADVal _ t0 (Some i) =>
@@ -337,7 +335,7 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
   | AEBreak => let* _ := check (fr_loop F) "`break` outside of a loop" in ret (EBreak, never)
   | AERec pa a fs =>
       let* s := lift (resolve_sym W (fr_mod F) pa) (bq (show_path pa) ++ " is not a tag with a record payload") in
-      let* _ := check (kind_is W s DKTag) (bq (show_path pa) ++ " is not a tag with a record payload") in
+      let* _ := check (kind_is W s DKTag && negb (bare_tagb W s)) (bq (show_path pa) ++ " is not a tag with a record payload") in
       let* bs := pure (brackets W fuel (fr_mod F) (c_ty C) s a) in
       let* xs := pure (rmap (fun r => let! t := ropt (nlook r (bs ++ c_ty C))
                                             ("type " ++ bq (sym_name W r) ++ " (required by " ++ qs W s ++

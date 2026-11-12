@@ -139,7 +139,7 @@ Proof.
       destruct Memory as [<-|[]]. eapply Kinds with (name := "Memory"); [cbn; tauto|].
       exists d, (dir ++ "wasm.moss"). repeat split; try assumption.
       unfold A.LibraryModule. now rewrite Library. }
-  unfold PublicFormation.Abstract. rewrite Kind. split; discriminate.
+  unfold PublicFormation.Abstract. rewrite Kind. discriminate.
 Qed.
 
 Lemma entry_arguments_formed : forall bundle W f C needs,
@@ -680,7 +680,7 @@ Qed.
 Lemma ex_scoped_ok : forall W Prog, (exists b, A.WorldOf b W) -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ExScopedOk W Prog.
 Proof.
   intros W Prog [b Wo] F C a x t D [Fc [Ff Cs]].
-  exact (PublicScoping.ex_scoped W Prog (PublicFormation.units_bare_of W b Wo) (PublicFamilySig.family_sig_ok_readoff W)
+  exact (PublicScoping.ex_scoped W Prog (PublicFormation.bare_tags_of W b Wo) (PublicFamilySig.family_sig_ok_readoff W)
     F C a None x t D Fc Ff Cs (PublicScoping.optscoped_none W C)).
 Qed.
 

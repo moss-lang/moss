@@ -55,7 +55,7 @@ Theorem pattern_translation : forall W F scrutinee source plan,
     (pattern_bindings plan) (pattern_heads plan) (pattern_catches plan).
 Proof.
   intros W F scrutinee source plan Typed. destruct Typed; cbn;
-    eauto using PWild, PBinder, PUnit, PTagBind, PRecord, field_pattern_translation.
+    eauto using PWild, PBinder, PNominal, PTagBind, PRecord, field_pattern_translation.
 Qed.
 
 Theorem pattern_has_plan : forall W F scrutinee source code bindings heads catch,
@@ -64,7 +64,7 @@ Theorem pattern_has_plan : forall W F scrutinee source code bindings heads catch
     pattern_bindings plan = bindings /\ pattern_heads plan = heads /\ pattern_catches plan = catch.
 Proof.
   intros W F scrutinee source code bindings heads catch Typed.
-  destruct Typed as [|n Resolved Named|path tag kind arguments Resolved Kind Nominal Member
+  destruct Typed as [|n Resolved Named|path tag arguments Resolved Kind Member
     |path tag arguments binder payload Resolved Kind Member Payload Read Named
     |path tag arguments fields field_types bindings code Resolved Kind Member Payload Fields Distinct].
   - exists PatternWildcard. repeat split. constructor.
@@ -319,7 +319,7 @@ Proof.
       splice_bindings fold_right map flat_map app] in *;
     intros; use_placements;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
-    ExBreak, ExCallD, ExCallA, ExUnitTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
+    ExBreak, ExCallD, ExCallA, ExBareTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
     ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation,
     BlkECheck, BlkTail, BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop,
     BlkLoopLast, ArgsNil, ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever,
@@ -397,9 +397,9 @@ Definition HasBranchPlan (W : world) (P : program) (F : frame) (C : cx) (source 
   forall expected code t, Branch W P F C source expected code t ->
     exists plan, TypesBranch W F C source expected plan t /\ translate_expr F C plan = code.
 
-Theorem unit_tag_source_has_plan : forall W P F C path tag,
+Theorem bare_tag_source_has_plan : forall W P F C path tag,
   (forall n, path = [n] -> slook n (c_locals C) = None) ->
-  resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKUnit ->
+  resolve_sym W (fr_mod F) path = Some tag -> BareTag W tag ->
   HasExpressionPlan W P F C (AEPath path None).
 Proof.
   intros W P F C path tag NotLocal Resolve Kind expected code t Typed. inversion Typed; subst.
@@ -407,14 +407,13 @@ Proof.
     | Read : slook ?name (c_locals ?context) = Some _ |- _ =>
       pose proof (NotLocal name eq_refl); congruence
     end].
-  all: try solve [eexists (PlanUnitTag _); split; [eapply TypesUnitTag; eassumption|reflexivity]].
+  all: try solve [eexists; split; [eapply TypesBareTag; eassumption|reflexivity]].
+  all: exfalso; destruct Kind as [bare_name Bare]; unfold ast_of in Bare.
   all: match goal with
-  | Read : resolve_sym ?world (fr_mod ?frame) ?path = Some ?symbol,
-    Declared : w_decl ?world ?symbol = Some ?d,
-    UnitKind : kind_sym ?world ?target = Some DKUnit,
-    Syntax : d_ast ?d = ADVal _ _ _ |- _ =>
-    assert (symbol = target) by congruence; subst symbol;
-    unfold kind_sym in UnitKind; rewrite Declared, Syntax in UnitKind; discriminate
+  | Read : option_map d_ast (w_decl ?world ?bare) = Some (ADBareTag _),
+    Declared : w_decl ?world ?symbol = Some ?d, Syntax : d_ast ?d = ADVal _ _ _ |- _ =>
+    assert (Found : w_decl world bare = Some d) by congruence;
+    rewrite Found in Read; cbn in Read; rewrite Syntax in Read; discriminate
   end.
 Qed.
 
@@ -652,7 +651,7 @@ Theorem body_typing_renumber : forall W,
 Proof.
   intros W. apply body_typing_ind; intros;
     eauto 9 using TypesUnit, TypesThis, TypesLocal, TypesBlock, TypesIfThen, TypesIfElse, TypesReturnUnit,
-    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesUnitTag, TypesTag, TypesRecord,
+    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesBareTag, TypesTag, TypesRecord,
     TypesField, TypesMatch, TypesMethod, TypesUnary, TypesBinary, TypesNumeric, TypesGlobalValue,
     TypesConstant, TypesBracketedCall, method_selection_renumber, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
     TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast, TypesArgsNil, TypesArgsCons, TypesBool,

@@ -113,7 +113,7 @@ Fixpoint tyof_formed p tm th a t (D : A.TyOf W p tm th a t) {struct D} :
 with br_formed p tm h x l (D : A.Brackets W p tm h x l) {struct D} : TmFormed tm -> TmFormed l.
 Proof.
   - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g0 k bs args R K Kk B F|p tm th pa a g0 d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g0 bs args R K B F|p tm th pa a g0 d n body bs tau R D A B T];
       intros Tm Th.
     + cbn. split; [constructor|split; [constructor|exact I]].
     + exact I.
@@ -127,7 +127,7 @@ Proof.
     + exact (Tm t tau (nlook_in _ _ _ _ L)).
     + apply nom_formed. split; [exact (keys_of _ _ (fun r v => A.nlook r (bs ++ tm)%list = Some v) F)|].
       pose proof (tm_app_formed _ _ (br_formed _ _ _ _ _ B Tm) Tm) as Btm. clear B.
-      intros x u I. clear Kk. induction F as [|r ra rs ras [E1 L1] Fr IH]; [contradiction|].
+      intros x u I. induction F as [|r ra rs ras [E1 L1] Fr IH]; [contradiction|].
       destruct I as [E|I]; [subst ra; exact (Btm _ _ (nlook_in _ _ _ _ L1))|exact (IH I)].
     + apply (tyof_formed _ _ _ _ _ T); [exact (tm_app_formed _ _ (br_formed _ _ _ _ _ B Tm) Tm)|intros x E; discriminate].
   - destruct D as [p tm h|p tm h bs l F]; intros Tm; [intros x u []|].
@@ -154,7 +154,7 @@ Import A.
 (* A type is ok when it is formed and every generation it mentions is
    abstract: never a tag or unit symbol (so a head that is a tag or unit
    symbol is a nominal head). *)
-Definition Abstract (g : nat) : Prop := kind_sym W g <> Some DKTag /\ kind_sym W g <> Some DKUnit.
+Definition Abstract (g : nat) : Prop := kind_sym W g <> Some DKTag.
 Definition TyOk (t : ty) : Prop := TyFormed W t /\ forall g, In g (gens t) -> Abstract g.
 Definition OptOk (o : option ty) : Prop := forall t, o = Some t -> TyOk t.
 Definition TmOk (tm : list (nat * ty)) : Prop := forall x u, In (x, u) tm -> TyOk u.
@@ -233,10 +233,10 @@ Lemma tyok_abs : forall g, Abstract g -> TyOk (TAbs g).
 Proof. intros g A0. split; [exact Logic.I|intros g' [<-|[]]; exact A0]. Qed.
 
 Lemma typed_abstract : forall x, kind_sym W x = Some DKType -> Abstract x.
-Proof. intros x K. unfold Abstract. rewrite K. split; discriminate. Qed.
+Proof. intros x K. unfold Abstract. rewrite K. discriminate. Qed.
 
 Lemma fresh_abstract : forall x, Fresh W x -> Abstract x.
-Proof. intros x Fr. unfold Abstract, kind_sym. unfold Fresh in Fr. rewrite Fr. split; discriminate. Qed.
+Proof. intros x Fr. unfold Abstract, kind_sym. unfold Fresh in Fr. rewrite Fr. discriminate. Qed.
 
 Lemma optok_none : OptOk None.
 Proof. intros t E. discriminate. Qed.
@@ -400,7 +400,7 @@ Lemma patof_ok : forall F st pat xp binds hs ca, PatOf W F st pat xp binds hs ca
   forall n t, In (n, t) binds -> TyOk t.
 Proof.
   intros F st pat xp binds hs ca Pt Ok.
-  destruct Pt as [|n R Nm|pa s k xs R K Kk Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay FP Nd];
+  destruct Pt as [|n R Nm|pa s xs R K Im|pa s xs y pay R K Im Pay Ry Nm|pa s xs fs ftys bs fxs R K Im Pay FP Nd];
     intros n' t' Ib.
   - contradiction.
   - destruct Ib as [E|[]]. injection E as _ <-. exact Ok.
@@ -1708,8 +1708,8 @@ Variable Prog : program.
 Import A.
 
 (* HYPOTHESIS (bare units). A unit has no requirements: `TNom s []` for a
-   unit s is formed. This is [wo_reqs_none] of [WorldOf] (units_bare_of). *)
-Definition UnitsBare : Prop := forall s, kind_sym W s = Some DKUnit -> w_reqs W s = [].
+   unit s is formed. This is [wo_reqs_none] of [WorldOf] (bare_tags_of). *)
+Definition BareTags : Prop := forall s, BareTag W s -> w_reqs W s = [].
 
 (* Family signatures, as first stated: a family applied to supply a method
    at an ok receiver supplies it at an ok signature. False as stated (see
@@ -1730,10 +1730,10 @@ Definition FamilySigReadOffOk : Prop := forall C u matching th sm Cr ks ot m g,
   FormedCx W C -> TyOk W ot ->
   In (mkey ot m) ks -> mlook ot m (c_mths Cr) = Some g -> SigOk W g.
 
-Hypothesis units_bare : UnitsBare.
+Hypothesis bare_tags : BareTags.
 Hypothesis family_sig_ok : FamilySigReadOffOk.
 
-Lemma units_bare_of : forall b, WorldOf b W -> UnitsBare.
+Lemma bare_tags_of : forall b, WorldOf b W -> BareTags.
 Proof. intros b Wo s K. apply (@wo_reqs_none b W Wo). right. exact K. Qed.
 
 Lemma tmok_ctx_table : forall C bs, FormedCx W C -> TmOk W bs -> TmOk W (bs ++ c_ty C).
@@ -1774,7 +1774,7 @@ Proof.
     + exact (tyok_unit W).
     + exact (proj2 Ff t Th).
     + exact (cf_locals _ _ (proj1 Fc) n t mu (slook_in _ _ _ _ L)).
-    + apply nom_ok_intro; [cbn; symmetry; exact (units_bare s K)|exact (tmok_nil W)].
+    + apply nom_ok_intro; [cbn; symmetry; exact (bare_tags s K)|exact (tmok_nil W)].
     + exact (vals_ok W _ _ _ (proj1 Fc) L).
     + exact (tyof_ok W _ _ _ _ _ T (tmok_nil W) (optok_none W)).
     + destruct (reqs_ok W _ _ _ Fx (tmok_ctx_table C bs Fc (br_ok W _ _ _ _ _ B (cf_ty _ _ (proj1 Fc))))) as [Kx Ox].
@@ -1966,7 +1966,7 @@ Proof.
   intros C r args Cf F. destruct (reqs_ok W _ _ _ F (cf_ty _ _ Cf)) as [K Ok]. exact (nom_ok_intro W r args K Ok).
 Qed.
 
-Hypothesis units_bare : UnitsBare W.
+Hypothesis bare_tags : BareTags W.
 Hypothesis family_sig_ok : FamilySigReadOffOk W.
 
 (* Corollary 1: elaborated types are formed, also canonically. *)
@@ -1974,21 +1974,21 @@ Theorem ex_formed' : forall F C a exp x t, Ex W Prog F C a exp x t ->
   FormedCx W C -> FrameFormed W F -> OptOk W exp -> UnionFormed (canon C t).
 Proof.
   intros F C a exp x t D Fc Ff Oe.
-  pose proof (canon_ok W C t (proj1 Fc) (ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ D Fc Ff Oe)) as [Fm _].
+  pose proof (canon_ok W C t (proj1 Fc) (ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ D Fc Ff Oe)) as [Fm _].
   intros ms E. rewrite E in Fm. apply union_formed in Fm as [Nom [Nd _]]. split; assumption.
 Qed.
 
-(* Corollary 2: an elaborated type headed by a tag or unit symbol is that
+(* Corollary 2: an elaborated type headed by a tag symbol is that
    nominal at exactly its requirements. *)
 Theorem ex_nominal_formed' : forall F C a exp x t, Ex W Prog F C a exp x t ->
   FormedCx W C -> FrameFormed W F -> OptOk W exp ->
-  forall h, head (canon C t) = Some h -> (kind_sym W h = Some DKTag \/ kind_sym W h = Some DKUnit) ->
+  forall h, head (canon C t) = Some h -> kind_sym W h = Some DKTag ->
   exists xs, canon C t = TNom h xs /\ map fst xs = w_reqs W h.
 Proof.
   intros F C a exp x t D Fc Ff Oe h Hd Kd.
-  pose proof (canon_ok W C t (proj1 Fc) (ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ D Fc Ff Oe)) as [Fm Gm].
+  pose proof (canon_ok W C t (proj1 Fc) (ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ D Fc Ff Oe)) as [Fm Gm].
   revert Fm Gm Hd. destruct (canon C t) as [m0|fs| |g|n xs|ms]; intros Fm Gm Hd; cbn in Hd; try discriminate.
-  - injection Hd as ->. exfalso. destruct (Gm h (or_introl eq_refl)) as [N1 N2]. destruct Kd; contradiction.
+  - injection Hd as ->. exfalso. exact (Gm h (or_introl eq_refl) Kd).
   - injection Hd as ->. exists xs. split; [reflexivity|]. exact (proj1 (proj1 (nom_formed W h xs) Fm)).
 Qed.
 

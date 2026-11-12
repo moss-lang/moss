@@ -25,7 +25,7 @@ Variable W : world.
 
 Definition kind_is (s : nat) (k : dkind) : bool :=
   match kind_sym W s, k with
-  | Some DKType, DKType | Some DKUnit, DKUnit | Some DKAlias, DKAlias | Some DKTag, DKTag
+  | Some DKType, DKType | Some DKAlias, DKAlias | Some DKTag, DKTag
   | Some DKVal, DKVal | Some DKFn, DKFn | Some DKCtx, DKCtx | Some DKMeth, DKMeth
   | Some DKFunctor, DKFunctor => true
   | _, _ => false
@@ -116,7 +116,7 @@ Fixpoint ty_of (fuel : nat) (p : string) (tm : list (nat * ty)) (th : option ty)
               | None => ropt (nlook g tm) ("type " ++ bq (sym_name W g) ++ " is not available in the context here")
               | Some _ => Err ("type " ++ bq (sym_name W g) ++ " takes no brackets")
               end
-          | Some DKTag | Some DKUnit =>
+          | Some DKTag =>
               let! bs := brackets f p tm g br in
               let! args := rmap (fun r => let! t := ropt (nlook r (bs ++ tm))
                                                  ("type " ++ bq (sym_name W r) ++ " (required by " ++ bq (sym_name W g) ++
@@ -244,10 +244,14 @@ Definition recv_ty (fuel : nat) (r : nat) (tm : list (nat * ty)) : er ty :=
       end
   end.
 
+Definition bare_tagb (s : nat) : bool :=
+  match ast_of W s with Some (ADBareTag _) => true | _ => false end.
+
 (* SOUND: payload_of fuel s xs = Ok pay -> PayloadOf W s xs pay *)
 Definition payload_of (fuel : nat) (s : nat) (xs : list (nat * ty)) : er ty :=
   let! d := decl_of s in
   match d_ast d with
+  | ADBareTag _ => Ok TUnit
   | ADTag _ _ t =>
       let! _ := match t with
                 | ATRec fs => rcheck (snodupb (map fst fs)) (qs W s ++ " names a field twice, so no record literal builds it")

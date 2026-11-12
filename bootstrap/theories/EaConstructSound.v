@@ -69,9 +69,10 @@ Proof.
   destruct (Below _ _ _ _ _ _ _ Child) as [Backward Typed].
   split; [exact Backward|]. intros Valid Post.
   destruct (Typed Valid Post) as [Final Body]. split; [exact Final|].
-  eapply ExTag; [exact Resolve|unfold kind_sym; fold W; now rewrite Declared, Tag|
-    eapply brackets_sound; exact Rows|now apply tag_arguments_read|
+  eapply ExTag; [exact Resolve| |eapply brackets_sound; exact Rows|now apply tag_arguments_read|
     eapply payload_of_sound; exact Payload|reflexivity|exact Body|now apply fitsb_exact].
+  intros [bare_name Bare]. unfold ast_of in Bare. fold W in Bare.
+  rewrite Declared in Bare. cbn in Bare. rewrite Tag in Bare. discriminate.
 Qed.
 
 Theorem record_fields_sound : forall n,
@@ -120,7 +121,7 @@ Proof.
   apply mbind_ok in Run as (s & middle & Read & Run).
   apply lift_result in Read as [Resolved <-].
   apply mbind_ok in Run as (checked & middle & Read & Run).
-  apply check_result in Read as [Tag [_ <-]].
+  apply check_result in Read as [Tag [_ <-]]. apply andb_true_iff in Tag as [Tag _].
   apply mbind_ok in Run as (rows & middle & Read & Run).
   apply pure_result in Read as [Rows <-].
   apply mbind_ok in Run as (arguments & middle & Read & Run).

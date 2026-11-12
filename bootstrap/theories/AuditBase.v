@@ -1253,8 +1253,8 @@ Definition Layouts (W : world) : Prop :=
 Definition Representations (W : world) (P : program) : Prop :=
   program_machines P = machine_table W.
 
-(* The native entry ABI carries no argument or result lanes. Nominal units
-   and unions carry discriminators; ordinary tags carry their payload lanes. *)
+(* The native entry ABI carries no argument or result lanes. Bare tags
+   and unions carry discriminators; tags with explicit payloads carry their payload lanes. *)
 Inductive EntryResult (W : world) : ty -> Prop :=
 | EntryUnit : EntryResult W TUnit
 | EntryNever : EntryResult W never
@@ -1262,7 +1262,7 @@ Inductive EntryResult (W : world) : ty -> Prop :=
     Forall (fun field => EntryResult W (snd field)) fields ->
     EntryResult W (TRecord fields)
 | EntryTag : forall n arguments payload,
-    PayloadOf W n arguments payload -> EntryResult W payload ->
+    ~ BareTag W n -> PayloadOf W n arguments payload -> EntryResult W payload ->
     EntryResult W (TNom n arguments).
 Definition EntryPoint (W : world) (P : program) : Prop :=
   exists context needs signature,

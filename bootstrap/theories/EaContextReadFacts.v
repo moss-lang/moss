@@ -74,8 +74,7 @@ Proof.
       destruct (resolve_sym W p pa) as [symbol|]; cbn [rbind]; [|reflexivity].
       rewrite kind_sym_context.
       destruct (kind_sym W symbol) as [kind|]; [|reflexivity].
-      destruct kind; [reflexivity| | | |reflexivity|reflexivity|reflexivity|reflexivity|reflexivity].
-      * rewrite BracketRead. reflexivity.
+      destruct kind; [reflexivity| | |reflexivity|reflexivity|reflexivity|reflexivity|reflexivity].
       * rewrite decl_of_context.
         apply rbind_pointwise; [reflexivity|intros d].
         destruct (d_ast d); try reflexivity. rewrite BracketRead.

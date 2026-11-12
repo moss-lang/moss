@@ -81,10 +81,10 @@ Proof.
         -- injection Run as <- <-. eapply OIEType; [exact Resolve| |eapply output_brackets_sound; exact Brackets].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- injection Run as <- <-.
-           eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|right; right; left; reflexivity].
+           eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|right; left; reflexivity].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- injection Run as <- <-.
-           eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|right; left; reflexivity].
+           eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|left; reflexivity].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- injection Run as <- <-.
            eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|left; reflexivity].
@@ -92,7 +92,7 @@ Proof.
         -- destruct initial as [initial|].
            ++ injection Run as <- <-.
               eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|
-                right; right; right; left; split; [reflexivity|]].
+                right; right; left; split; [reflexivity|]].
               ** unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
               ** exists d, name, value_type, initial. split; assumption.
            ++ apply rbind_ok in Run as [meaning [Meaning Run]]. injection Run as <- <-.
@@ -101,7 +101,7 @@ Proof.
         -- destruct receiver; try discriminate. destruct body as [body|].
            ++ injection Run as <- <-.
               eapply OIENothing; [exact Resolve| |eapply output_brackets_sound; exact Brackets|
-                right; right; right; right; split; [reflexivity|]].
+                right; right; right; split; [reflexivity|]].
               ** unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
               ** exists d, RPlain, name, parameters, result, body. split; assumption.
            ++ apply rbind_ok in Run as [signature [Signature Run]]. injection Run as <- <-.

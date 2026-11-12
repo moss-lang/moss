@@ -18,7 +18,7 @@ Section Scope.
 Variable W : A.world.
 Variable Prog : program.
 Import A.
-Hypothesis units_bare : UnitsBare W.
+Hypothesis bare_tags : BareTags W.
 Hypothesis family_sig_ok : FamilySigReadOffOk W.
 
 Definition ProvScope (C C' : cx) : Prop := forall k p, In (k, p) (c_provisions C') ->
@@ -361,7 +361,7 @@ Proof.
   - destruct D as [F C|F C it r w1 C1 F1 m1 w2 C2 F2 m2 D1 D2]; intros Fc Ff.
     + split; [intros y I; exact I|split; [intros y I; left; exact I|split; [intros k p I; left; exact I|split; [split; reflexivity|]]]].
       apply types_kept_incl. intros q Iq. exact Iq.
-    + destruct (binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D1 Fc Ff) as [Fc1 Ff1].
+    + destruct (binditem_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ _ D1 Fc Ff) as [Fc1 Ff1].
       exact (step_trans _ _ _ _ _ (item_scope _ _ _ _ _ _ _ D1 Fc Ff) (items_scope _ _ _ _ _ _ _ D2 Fc1 Ff1)).
 Qed.
 

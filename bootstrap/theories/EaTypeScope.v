@@ -115,11 +115,6 @@ Proof.
       * destruct application; [discriminate|].
         rewrite <- (Agree g); [exact Run|].
         eapply FType; [exact Resolved|exact Kind|intros (b & [] & _)].
-      * apply rbind_ok in Run as (rows & Bindings & Run).
-        rewrite (BracketRead _ _ _ _ _ _ _ Resolved Agree Bindings). cbn [rbind].
-        apply rbind_ok in Run as (args & Arguments & Run).
-        rewrite (nominal_arguments_narrow _ _ _ _ _ _ _ _ Resolved ltac:(congruence)
-          (brackets_sound _ _ _ _ _ _ _ Bindings) Agree Arguments). exact Run.
       * apply rbind_ok in Run as (d & Declaration & Run).
         rewrite Declaration. cbn [rbind].
         destruct (d_ast d) as [items declarations|n|n body|n params payload|n|n value init|

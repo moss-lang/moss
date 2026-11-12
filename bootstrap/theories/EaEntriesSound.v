@@ -54,17 +54,17 @@ Proof.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
            eapply IEType; [exact Resolve|]. unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-           eapply IENothing; [exact Resolve| |right; right; left; reflexivity].
+           eapply IENothing; [exact Resolve| |right; left; reflexivity].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-           eapply IENothing; [exact Resolve| |right; left; reflexivity].
+           eapply IENothing; [exact Resolve| |left; reflexivity].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
            eapply IENothing; [exact Resolve| |left; reflexivity].
            unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
         -- destruct initial as [initial|].
            ++ destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-              eapply IENothing; [exact Resolve| |right; right; right; split; [reflexivity|]].
+              eapply IENothing; [exact Resolve| |right; right; split; [reflexivity|]].
               ** unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
               ** exists d, name, value_type, initial. split; assumption.
            ++ apply rbind_ok in Run as [bindings [Brackets Run]].

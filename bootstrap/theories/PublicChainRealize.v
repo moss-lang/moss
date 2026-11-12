@@ -840,7 +840,7 @@ Lemma r2 : forall k, In k ks -> forall p, A.ilook (A.provision_id k) (A.c_provis
 Proof.
   intros k Ik p Lp.
   destruct World as [bw Wo].
-  pose proof (PublicFormation.units_bare_of W bw Wo) as UB.
+  pose proof (PublicFormation.bare_tags_of W bw Wo) as UB.
   pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   pose proof (items_scope W Prog UB (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf) as ScopeB.
   destruct (functx_step_scope W gg Cg nsg Cb made FCg ScopeB) as [ScopeG [[BackB PvB] [SectionB MergeB]]].
@@ -1270,7 +1270,7 @@ Proof.
   assert (KeyTy : forall t, (forall x, In x (A.gens t) -> OkG2 x) -> ground d3 (app_subst rr t) = app_subst T0 t).
   { intros t Ok. unfold ground. apply PublicCopySubst.ty_agree. intros x Ix. exact (KeyX x (Ok x Ix)). }
   pose proof World as [bundle WorldOf].
-  pose proof (PublicFormation.units_bare_of W bundle WorldOf) as Bare.
+  pose proof (PublicFormation.bare_tags_of W bundle WorldOf) as Bare.
   pose proof (PublicFormation.functx_cx_formed W mentions_typed gg Cg nsg FCg) as FormG.
   pose proof (items_scope W Prog Bare (PublicFamilySig.family_sig_ok_readoff W) _ _ _ _ _ _ _ Items FormG FrGf)
     as [_ [_ [_ [[Rows _] _]]]].

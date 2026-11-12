@@ -2236,15 +2236,15 @@ Qed.
 
 Hypothesis World : exists b, A.WorldOf b W.
 
-Lemma units_bare : PublicFormation.UnitsBare W.
-Proof. destruct World as [b Wo]. exact (PublicFormation.units_bare_of W b Wo). Qed.
+Lemma bare_tags : PublicFormation.BareTags W.
+Proof. destruct World as [b Wo]. exact (PublicFormation.bare_tags_of W b Wo). Qed.
 
 (* A bind item leaves a formed context (T29, PublicFormation). *)
 Lemma item_formed : forall F C it w C' F' m, LegacyBodyJudgments.BindItem W Prog F C it w C' F' m -> Formed F C -> Formed F' C'.
 Proof.
   intros F C it w C' F' m D [Fc [Ff Cs]].
-  destruct (PublicFormation.binditem_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff) as [Fc' Ff'].
-  exact (conj Fc' (conj Ff' (proj1 (PublicScoping.binditem_scoped W Prog units_bare family_sig_ok _ _ _ _ _ _ _ D Fc Ff Cs)))).
+  destruct (PublicFormation.binditem_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ _ D Fc Ff) as [Fc' Ff'].
+  exact (conj Fc' (conj Ff' (proj1 (PublicScoping.binditem_scoped W Prog bare_tags family_sig_ok _ _ _ _ _ _ _ D Fc Ff Cs)))).
 Qed.
 
 (* Fewer provisions keep a context formed. *)
@@ -5464,7 +5464,7 @@ Proof.
   pose proof (attached_unique h r n att Att Att0) as <-.
   pose proof Head as Head'. rewrite Ot in Head'.
   pose proof Pre0 as [_ [_ [_ [_ [_ [FcA [FfA _]]]]]]].
-  destruct (PublicFormation.ex_nominal_formed' W Prog units_bare family_sig_ok F C o None ox ot0 Do FcA FfA
+  destruct (PublicFormation.ex_nominal_formed' W Prog bare_tags family_sig_ok F C o None ox ot0 Do FcA FfA
     (PublicFormation.optok_none W) h Head' Kind) as [xs0 [Eot Keys]].
   rewrite <- Ot in Eot. rewrite Eot in Ot. subst ot. cbn in Rargs. subst rargs.
   set (Cd0 := fold_left (fun C q => A.set_ty C (fst q) (snd q)) xs0 C) in *.
@@ -5476,7 +5476,7 @@ Proof.
     assert (Rok : PublicFormation.TyOk W (TNom h xs0) /\ PublicFormation.ScopedTy W C (TNom h xs0)).
     { rewrite Ot. split.
       - exact (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
-          (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W))).
+          (PublicFormation.ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W))).
       - exact (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o ox ot0 Do Fm)). }
     assert (Tin : FamilyTableIn Cd0 C).
     { intros xq v Iq. replace (A.canon Cd0 v) with (A.canon C v) by (unfold A.canon, Cd0; rewrite Es; reflexivity).
@@ -5490,7 +5490,7 @@ Proof.
       - rewrite map_rev in Ix. apply (proj2 (in_rev _ _)) in Ix.
         assert (Ir : In xq (A.w_reqs W h)) by (rewrite <- Keys; exact Ix).
         destruct World as [bd Wo]. apply (PublicWorldFormation.reqs_typed bd W Wo h xq); [|exact Ir].
-        intros E. unfold A.kind_sym in Kind. rewrite E in Kind. destruct Kind; discriminate.
+        intros E. unfold A.kind_sym in Kind. rewrite E in Kind. discriminate.
       - exact (proj2 (proj2 (proj1 Fm)) xq Ix). }
     pose proof (PublicContextFacts.family_context_merge xs0 C) as Emg.
     assert (CT0 : A.CallTheta W Cd0 Ca att th).
@@ -5544,7 +5544,7 @@ Proof.
        exact (family_method_case k Bel F C o ox ot0 m args u matching th sm C' ks g xs B Do BrkO BrkA
           None' Fam Ro
           (fun Fm => conj (PublicFormation.canon_ok W C ot0 (proj1 (proj1 Fm))
-              (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W)))
+              (PublicFormation.ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ Do (proj1 Fm) (proj1 (proj2 Fm)) (PublicFormation.optok_none W)))
             (PublicFormation.canon_scoped W C ot0 (ex_scoped F C o ox ot0 Do Fm)))
           InK Only Found Args). }
   intros d types H lg lst Pre0.
@@ -5647,12 +5647,12 @@ Proof.
     + (* local *) cbn [AR.O.I.eval]. pose proof Pre0 as [_ [[Loc _] [L _]]].
       destruct (locals_lookup W P H lg types _ _ L (Loc n t mu Found Named)) as [w [Look T]].
       rewrite Look. eapply outcome_now; eassumption.
-    + (* unit tag *) cbn [AR.O.I.eval]. pose proof (unit_k F C d types H lg lst (pre_lower Pre0)) as Out.
+    + (* bare tag *) cbn [AR.O.I.eval]. pose proof (unit_k F C d types H lg lst (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst TUnit _ False _ _ _ Pre0 (fun f => False_ind _ f) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
       exact (TC.tag_preserves W Prog argv read d H1 s [] TUnit w
-        (or_intror (conj K (conj eq_refl eq_refl))) T1).
+        (bare_tag_payload W s [] K) T1).
     + (* val *) exact (val_step F C pa s t Val d types H lg lst Pre0).
     + (* const *)
       destruct Init as [F0 [t' [Dx [Fits [Mod [Ret [This [Loop [Fresh [App [Pins Num]]]]]]]]]]].
@@ -5682,7 +5682,7 @@ Proof.
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
       exact (TC.tag_preserves W Prog argv read d H1 s xs pay w
-        (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
+        Pay T1).
     + destruct Def as [n0 [ps0 [rt0 [b0 Def]]]].
       pose (sm := A.satisfaction_map C' Cf th ns).
       assert (Sat : A.Satisfies C' Cf th ns sm) by (split; [reflexivity|exact Needs]).
@@ -5740,10 +5740,10 @@ Proof.
       intros H1 g1 st1 w E1 Pre1 T1.
       pose proof Pre1 as [Frame [Ctx [L1 [S1 [Real Fmd1]]]]].
       assert (T1' : value_typed W P H1 w (ground d (A.canon C st))) by (rewrite (realizes_absorbs_canon _ _ _ _ Real); exact T1).
-      pose proof (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1))
+      pose proof (PublicFormation.ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1))
         (PublicFormation.optok_none W)) as OkSt.
       destruct (AR.arms_select W Prog P d H1 F C _ arms exp xarms t w Darms
-        (PublicFormation.ex_formed' W Prog units_bare family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W)) T1')
+        (PublicFormation.ex_formed' W Prog bare_tags family_sig_ok _ _ _ _ _ _ Ds (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W)) T1')
         as [pat [body [bs [eb [binds [et [Sel [InArm [Dbr [FitsT [_ [[NamedB [Distinct LB]] [xp [hs [ca PO]]]]]]]]]]]]]]].
       rewrite Sel.
       assert (Len : List.length bs = List.length (map (fun q => (A.var_of F (fst q), ground d (snd q))) binds))
@@ -5786,7 +5786,7 @@ Proof.
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
       exact (TC.tag_preserves W Prog argv read d H1 s xs (TRecord ftys) w
-        (or_introl (conj K (conj Pay (forall2_keys _ _ (fun r v => A.nlook r (List.app bs (A.c_ty C)) = Some v) F2)))) T1).
+        Pay T1).
     + (* field *) cbn [AR.O.I.eval].
       pose proof (sex F C o None ox ot Do d types H lg lst (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkField n B) Out).
@@ -5796,7 +5796,7 @@ Proof.
         fields_typed W P H1 values (map (fun q => (fst q, ground d (snd q))) ftys)).
       { destruct Rcd as [[s [xs [-> [K Pay]]]]|Same].
         - rewrite ground_nom in T1. destruct (nominal_value W P _ _ _ _ T1) as [inner ->].
-          destruct (tagged_payload_typed W P H1 s _ inner K T1) as [payload [Pay' Inner]].
+          destruct (tagged_payload_typed W P H1 s _ inner T1) as [payload [Pay' Inner]].
           pose proof (payload_det W _ _ _ _ Pay' (payload_subst W (type_meanings d) _ _ _ Pay)) as ->.
           change (app_subst (type_meanings d) (TRecord ftys)) with (ground d (TRecord ftys)) in Inner.
           rewrite ground_record in Inner.
@@ -5842,7 +5842,7 @@ Proof.
           destruct Ann as [dd [Td E]]. injection E as <-.
           split; [exact (PublicFormation.tyof_ok W _ _ _ _ _ Td (PublicFormation.cf_ty _ _ (proj1 (proj1 Fmd1))) (proj2 (proj1 (proj2 Fmd1))))|].
           exact (PublicScoping.tyof_scoped_ctx W C _ _ _ _ Td (proj1 (proj2 (proj2 (proj2 (proj2 Fmd1)))))).
-        * subst t0. split; [exact (PublicFormation.ex_ok W Prog units_bare family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W))|].
+        * subst t0. split; [exact (PublicFormation.ex_ok W Prog bare_tags family_sig_ok _ _ _ _ _ _ Dy (proj1 Fmd1) (proj1 (proj2 Fmd1)) (PublicFormation.optok_none W))|].
           exact (ex_scoped F C y v vt Dy Fmd1). }
       split; [exact (PublicFormation.add_local_formed W C n t0 mu (proj1 Fmd1) (proj1 T0))|].
       split; [exact (proj1 (proj2 Fmd1))|exact (PublicScoping.add_local_scoped W F C n t0 mu (proj2 (proj2 Fmd1)) (proj2 T0))].

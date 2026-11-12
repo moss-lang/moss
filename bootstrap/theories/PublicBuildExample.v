@@ -115,13 +115,13 @@ Proof.
     intros [d [rn [ps [rt [body [Read [Ast _]]]]]]].
     apply reads_decl in Read as [-> ->]. discriminate Ast.
   - intro s. constructor.
-  - intros s k Kind _ _ _ _ t. split; [contradiction|].
+  - intros s k Kind _ _ _ t. split; [contradiction|].
     intros [d [pa [Read [InAssumes _]]]].
     apply reads_decl in Read as [-> ->]. contradiction.
   - intros. reflexivity.
   - intros g d ps t Read Body. apply reads_decl in Read as [-> ->]. discriminate Body.
-  - intros R Closed Agrees g Kind. unfold kind_sym in Kind. cbn in Kind.
-    destruct (Nat.eqb g 1); destruct Kind; discriminate.
+  - intros R Closed Agrees g Body. unfold has_nominal_body, ast_of in Body. cbn in Body.
+    destruct (Nat.eqb g 1); discriminate.
   - intros g d ps t n Read Body Member. apply reads_decl in Read as [-> ->]. discriminate Body.
   - reflexivity.
 Qed.

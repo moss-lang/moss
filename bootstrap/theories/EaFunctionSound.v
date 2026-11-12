@@ -57,14 +57,14 @@ Proof.
     destruct (w_attached (e_W E) r n) as [f'|] eqn:AttachedMethod; [|discriminate Receiver].
     destruct (Nat.eqb f f') eqn:Method; [|discriminate Receiver].
     apply Nat.eqb_eq in Method. subst f'.
-    destruct (kind_is (e_W E) r DKTag || kind_is (e_W E) r DKUnit) eqn:Kind;
+    destruct (kind_is (e_W E) r DKTag) eqn:Kind;
       [|discriminate Receiver].
     destruct (find (fun x => negb (is_some (nlook x (c_ty C)))) (w_reqs (e_W E) r))
       eqn:Args; [discriminate Receiver|].
     injection Receiver as <- <-. split; [|reflexivity].
     exists r. eexists. split; [exact AttachedMethod|].
     split; [|split; [reflexivity|now apply read_receiver_arguments]].
-    apply orb_true_iff in Kind. now rewrite !kind_is_spec in Kind.
+    now apply kind_is_spec in Kind.
   }
   destruct Reading as [Reading ->].
   assert (ReadCtx : CtxOf (e_W E) f C ns).

@@ -160,7 +160,9 @@ Fixpoint entry_result (n : nat) (t : ty) : bool :=
   | TUnit => true
   | TUnion [] => true
   | TRecord fs => forallb (fun q => entry_result n' (snd q)) fs
-  | TNom s args => match payload_of W fuel s args with Ok p => entry_result n' p | Err _ => false end
+  | TNom s args =>
+      if bare_tagb W s then false
+      else match payload_of W fuel s args with Ok p => entry_result n' p | Err _ => false end
   | _ => false
   end end.
 
@@ -200,7 +202,7 @@ Definition lang_items_formed : er unit :=
       let incompatible := at_sym b "platform Bool, True and False have incompatible declarations" in
       match lang_item_sym W LITrue, lang_item_sym W LIFalse with
       | Some tr, Some fl =>
-          let! _ := rcheck (kind_is W b DKTag && kind_is W tr DKUnit && kind_is W fl DKUnit && negb (Nat.eqb tr fl) &&
+          let! _ := rcheck (kind_is W b DKTag && bare_tagb W tr && bare_tagb W fl && negb (Nat.eqb tr fl) &&
                             match w_reqs W b with [] => true | _ => false end) incompatible in
           rcheck (match payload_of W fuel b [] with
                   | Ok pay => ty_eqb pay (TUnion [TNom tr []; TNom fl []]) || ty_eqb pay (TUnion [TNom fl []; TNom tr []])

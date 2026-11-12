@@ -142,7 +142,7 @@ Definition err_in {A} (m : gmod) (msg : string) : res A := Bad (gm_path m ++ ": 
 
 Definition decl_kind (d : adecl) : option (name * kind) :=
   match d with
-  | ADType n => Some (n, KType) | ADUnit n => Some (n, KUnit)
+  | ADType n => Some (n, KType) | ADBareTag n => Some (n, KUnit)
   | ADAlias n _ => Some (n, KAlias) | ADTag n _ _ => Some (n, KTag)
   | ADVal n _ _ => Some (n, KVal) | ADCtx n _ => Some (n, KCtx)
   | ADFunctor n _ _ _ _ => Some (n, KFunctor)

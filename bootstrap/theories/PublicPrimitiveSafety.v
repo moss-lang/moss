@@ -186,8 +186,6 @@ Proof.
         as [_ Look];
       rewrite Raw in Look; injection Look as <-;
       destruct (scalar_value _ _ _ _ Class Inner) as [n ->]; eauto end.
-  - congruence.
-
 Qed.
 
 Lemma bool_syms : forall s, A.LangSym W "bool" A.NSName "Bool" s ->
@@ -210,7 +208,7 @@ Proof.
   destruct (proj1 Bools s Sym) as [truth [falsity [T [F [_ [TU [FU [_ [_ Payload]]]]]]]]].
   destruct (bool_syms s Sym) as [-> Names]. destruct (Names _ _ T F) as [-> ->]. subst b.
   destruct Payload as [Pay|Pay]; (eapply TypedTag; [exact Pay|]);
-    destruct Et as [->| ->]; (eapply TypedUnion; [apply TypedUnitTag; eassumption|in_list]).
+    destruct Et as [->| ->]; (eapply TypedUnion; [apply typed_bare_tag; eassumption|in_list]).
 Qed.
 
 (* A typed argument has the shape its platform signature names. *)

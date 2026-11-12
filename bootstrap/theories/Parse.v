@@ -793,7 +793,7 @@ Fixpoint parse_decl (n : nat) (ts : list token) : pr adecl :=
         let@ ps & ts := (if bracketed then name_list n ts else POk [] ts) in
         if at_ SEMI ts then
           (if bracketed then err ("a tag with listed parameters has a payload; a unit tag is `tag " ++ x ++ ";` (D73)") ts
-           else POk (ADUnit x) (advance ts)) else
+           else POk (ADBareTag x) (advance ts)) else
         let@ t & ts :=
           (if at_ LBRACE ts then parse_record_type n ts
            else

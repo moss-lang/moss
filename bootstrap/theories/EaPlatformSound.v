@@ -16,9 +16,10 @@ Proof.
   - apply P.EntryRecord. apply Forall_forall. intros field Present. apply IH.
     exact (proj1 (forallb_forall _ _) Checked field Present).
   - apply P.EntryUnit.
-  - destruct (payload_of (e_W E) (e_fuel E) tag args) as [payload|message] eqn:Read;
+  - destruct (bare_tagb (e_W E) tag) eqn:Bare; [discriminate|].
+    destruct (payload_of (e_W E) (e_fuel E) tag args) as [payload|message] eqn:Read;
       [|discriminate].
-    eapply P.EntryTag; [eapply payload_of_sound; exact Read|now apply IH].
+    eapply P.EntryTag; [intro H; apply bare_tagb_spec in H; congruence|eapply payload_of_sound; exact Read|now apply IH].
   - destruct members; [apply P.EntryNever|discriminate].
 Qed.
 
@@ -144,8 +145,8 @@ Proof.
   destruct (w_reqs (e_W E) b) as [|need needs] eqn:Requirements.
   2: { rewrite andb_false_r in Formation. discriminate. }
   destruct (kind_is (e_W E) b DKTag) eqn:BoolKind; [|discriminate Formation].
-  destruct (kind_is (e_W E) truth DKUnit) eqn:TruthKind; [|discriminate Formation].
-  destruct (kind_is (e_W E) falsity DKUnit) eqn:FalsityKind; [|discriminate Formation].
+  destruct (bare_tagb (e_W E) truth) eqn:TruthKind; [|discriminate Formation].
+  destruct (bare_tagb (e_W E) falsity) eqn:FalsityKind; [|discriminate Formation].
   destruct (Nat.eqb truth falsity) eqn:Distinct; [discriminate Formation|].
   destruct (payload_of (e_W E) (e_fuel E) b []) as [payload|message] eqn:Read;
     [|discriminate Run].
@@ -157,8 +158,8 @@ Proof.
   split; [eapply lang_item_sym_sound; exact Truth|].
   split; [eapply lang_item_sym_sound; exact Falsity|].
   split; [now apply kind_is_spec|].
-  split; [now apply kind_is_spec|].
-  split; [now apply kind_is_spec|].
+  split; [now apply bare_tagb_spec|].
+  split; [now apply bare_tagb_spec|].
   split; [now apply Nat.eqb_neq|].
   split; [reflexivity|].
   destruct Payload as [Payload|Payload];

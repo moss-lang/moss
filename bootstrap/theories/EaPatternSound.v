@@ -49,19 +49,19 @@ Qed.
    reused by path, payload and record patterns. *)
 Lemma tag_member_read_sound : forall F st path no_name bad_kind no_member symbol arguments,
   (let! s := ropt (resolve_sym W (fr_mod F) path) no_name in
-   let! _ := rcheck (kind_is W s DKUnit || kind_is W s DKTag) bad_kind in
+   let! _ := rcheck (kind_is W s DKTag) bad_kind in
    let! xs := ropt (member_with_head st s) (no_member s) in
    Ok (s, xs)) = Ok (symbol, arguments) ->
   resolve_sym W (fr_mod F) path = Some symbol /\
-  (kind_sym W symbol = Some DKUnit \/ kind_sym W symbol = Some DKTag) /\
+  kind_sym W symbol = Some DKTag /\
   In (TNom symbol arguments) (members st).
 Proof.
   intros F st path no_name bad_kind no_member symbol arguments Run.
   destruct (resolve_sym W (fr_mod F) path) as [s|] eqn:Resolve; cbn [rbind] in Run; [|discriminate].
-  destruct (kind_is W s DKUnit || kind_is W s DKTag) eqn:Kind; cbn [rbind] in Run; [|discriminate].
+  destruct (kind_is W s DKTag) eqn:Kind; cbn [rbind] in Run; [|discriminate].
   destruct (member_with_head st s) as [xs|] eqn:Member; cbn [rbind] in Run; [|discriminate].
   injection Run as <- <-. split; [reflexivity|]. split.
-  - apply orb_true_iff in Kind as [Unit|Tag]; [left|right]; apply kind_is_spec; assumption.
+  - now apply kind_is_spec in Kind.
   - exact (member_with_head_sound _ _ _ Member).
 Qed.
 
@@ -77,41 +77,39 @@ Proof.
          destruct (resolve W (fr_mod F) [name]) eqn:Global.
          - apply rbind_ok in Run as [[symbol arguments] [Read Run]].
            apply tag_member_read_sound in Read as [Resolve [Kind Member]].
-           destruct (kind_is W symbol DKUnit || kind_is W symbol DKTag); cbn [rbind] in Run; [|discriminate].
            injection Run as <- <- <- <-.
-           destruct Kind as [Unit|Tag]; eapply PUnit; [exact Resolve|eassumption|left; reflexivity|exact Member|exact Resolve|eassumption|right; reflexivity|exact Member].
+           eapply PNominal; eassumption.
          - destruct (slook name (fr_var F)) eqn:Numbered; cbn [is_some rbind] in Run; [|discriminate].
            injection Run as <- <- <- <-. apply PBinder; [exact Global|].
            unfold Named. rewrite Numbered. discriminate. }
     unfold pat_of in Run. fold W fuel in Run.
     apply rbind_ok in Run as [[symbol arguments] [Read Run]].
     apply tag_member_read_sound in Read as [Resolve [Kind Member]].
-    destruct (kind_is W symbol DKUnit || kind_is W symbol DKTag); cbn [rbind] in Run; [|discriminate].
     injection Run as <- <- <- <-.
-    destruct Kind as [Unit|Tag]; eapply PUnit; [exact Resolve|eassumption|left; reflexivity|exact Member|exact Resolve|eassumption|right; reflexivity|exact Member].
+    eapply PNominal; eassumption.
   - destruct payload as [|payload|head payload|head fields]; try discriminate.
     destruct payload as [|binder [|next rest]]; try discriminate.
     unfold pat_of in Run. fold W fuel in Run.
     apply rbind_ok in Run as [[symbol arguments] [Read Run]].
-    apply tag_member_read_sound in Read as [Resolve [_ Member]].
-    destruct (kind_is W symbol DKTag) eqn:Kind; cbn [rbind] in Run; [|discriminate].
+    apply tag_member_read_sound in Read as [Resolve [Kind Member]].
+    destruct (bare_tagb W symbol) eqn:Bare; cbn [rbind negb] in Run; [discriminate|].
     apply rbind_ok in Run as [payload_type [Payload Run]].
     destruct (resolve W (fr_mod F) [binder]) eqn:Unbound; cbn [is_some negb rbind] in Run; [discriminate|].
     destruct (slook binder (fr_var F)) eqn:Numbered; cbn [is_some rbind] in Run; [|discriminate].
     injection Run as <- <- <- <-.
-    eapply PTagBind; [exact Resolve|apply kind_is_spec; exact Kind|exact Member|
+    eapply PTagBind; [exact Resolve|intro H; apply bare_tagb_spec in H; congruence|exact Member|
       eapply payload_of_sound; exact Payload|exact Unbound|].
     unfold Named. rewrite Numbered. discriminate.
   - destruct path as [path|]; [|discriminate]. unfold pat_of in Run. fold W fuel in Run.
     apply rbind_ok in Run as [[symbol arguments] [Read Run]].
-    apply tag_member_read_sound in Read as [Resolve [_ Member]].
-    destruct (kind_is W symbol DKTag) eqn:Kind; cbn [rbind] in Run; [|discriminate].
+    apply tag_member_read_sound in Read as [Resolve [Kind Member]].
+    destruct (bare_tagb W symbol) eqn:Bare; cbn [rbind negb] in Run; [discriminate|].
     apply rbind_ok in Run as [payload_type [Payload Run]].
     destruct payload_type as [machine|types| |abstract|tag type_arguments|alternatives]; try discriminate.
     apply rbind_ok in Run as [[names vars] [Fields Run]].
     destruct (snodupb (map fst names)) eqn:Distinct; cbn [rbind] in Run; [|discriminate].
     injection Run as <- <- <- <-.
-    eapply PRecord; [exact Resolve|apply kind_is_spec; exact Kind|exact Member|
+    eapply PRecord; [exact Resolve|exact Kind|exact Member|
       eapply payload_of_sound; exact Payload|eapply field_pats_sound; exact Fields|apply snodupb_sound; exact Distinct].
 Qed.
 

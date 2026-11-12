@@ -147,7 +147,7 @@ with br_on p tm1 g x l1 (D : Brackets W p tm1 g x l1) {struct D} :
   Forall2 (Rel s s) l1 l2.
 Proof.
   - destruct D as [p tm th|p tm th|p tm t|p tm th fs ts Nd F|p tm th ms ts flat F Ef Fm Nd
-                  |p tm th pa t tau R K L|p tm th pa a g k bs args R K Kk B F|p tm th pa a g d n body bs tau R D A B T];
+                  |p tm th pa t tau R K L|p tm th pa a g bs args R K B F|p tm th pa a g d n body bs tau R D A B T];
       intros tm2 th2 t2 D2 Ag This; inversion D2; subst; clear D2.
     + reflexivity.
     + reflexivity.
@@ -183,7 +183,7 @@ Proof.
       match goal with H0 : Brackets _ _ _ _ _ ?bs0 |- _ => rename H0 into B2; rename bs0 into bs2 end.
       assert (Rn : resolve_sym W p pa <> None) by (rewrite R; discriminate).
       pose proof (br_on _ _ _ _ _ B _ _ B2 (brackets_agree p pa a tm tm2 Rn Ag)) as BR.
-      assert (Kn : kind_sym W g <> Some DKType) by (rewrite K; destruct Kk as [->| ->]; discriminate).
+      assert (Kn : kind_sym W g <> Some DKType) by (rewrite K; discriminate).
       pose proof (nom_agree p tm tm2 pa a g bs bs2 R Kn B BR Ag) as Ag'.
       rewrite !subst_nom. f_equal. apply (smap_rel s s).
       match goal with H0 : Forall2 _ (w_reqs W g) ?a0 |- _ => rename H0 into F2; rename a0 into args2 end.

@@ -52,7 +52,7 @@ Proof.
     (fun p ob tm sps es tm' _ => Forall (A.FamilyResult W p) sps -> Forall MethodEntry es)).
   - intros p ob tm pa a bs t R K Br Fr. pose proof (CtxKind p pa a t _ R K Fr). discriminate.
   - intros p ob tm pa a bs s k R K Br Kk Fr. pose proof (CtxKind p pa a s k R K Fr) as ->.
-    destruct Kk as [E|[E|[E|[[E _]|[E _]]]]]; discriminate E.
+    destruct Kk as [E|[E|[[E _]|[E _]]]]; discriminate E.
   - intros p ob tm a pa s d n t ty0 bs ap R D Ast Br Ty Ap Fr.
     inversion Fr as [|p0 pa0 a0 u d0 n0 its sps Ru Du Au Es Sub]; subst.
     assert (s = u) by congruence. subst u. rewrite D in Du. injection Du as <-. congruence.

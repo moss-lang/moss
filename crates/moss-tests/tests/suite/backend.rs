@@ -1690,7 +1690,7 @@ const MATCH_PATTERN_FORMS: &[(&str, &str, &str)] = &[
     ),
     (
         "tests/wasi/match_unit_payload.moss",
-        "`Red` is not a tag",
+        "`Red` has no explicit payload",
         "?S tests/wasi/match_unit_payload.moss pick Red\n",
     ),
 ];

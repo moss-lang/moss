@@ -149,7 +149,7 @@ Proof.
     + exists PlanUnit. split; [constructor|split; [reflexivity|finish_placements]].
     + exists PlanThis. split; [now constructor|split; [reflexivity|finish_placements]].
     + exists (PlanLocal n). split; [eapply TypesLocal; eassumption|split; [reflexivity|finish_placements]].
-    + exists (PlanUnitTag s). split; [eapply TypesUnitTag; eassumption|split; [reflexivity|finish_placements]].
+    + exists (PlanTag s [] PlanUnit). split; [eapply TypesBareTag; eassumption|split; [reflexivity|finish_placements]].
     + exists (PlanGlobalValue s). split; [eapply TypesGlobalValue; eassumption|split; [reflexivity|finish_placements]].
     + destruct Initializer as (layout & actual & Init & Fits & Module & Ret & This & Loop & Fresh & Applying & Pins & Layout).
       destruct (read_expression _ _ _ _ _ _ Init) as (plan & Typed & <- & ?Placed).
