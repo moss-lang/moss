@@ -28,6 +28,7 @@ Qed.
 Record ExpressionCodeEffects (E : env) (R : rec) (fuel : nat) : Prop := {
   ex_code_effect : forall F C e expected, PreservesOldCode (EaExpr.ex E R fuel F C e expected);
   fields_code_effect : forall F C fields types, PreservesOldCode (EaExpr.mmap_fields E R fuel F C fields types);
+  synth_fields_code_effect : forall F C fields, PreservesOldCode (EaExpr.synth_fields E R fuel F C fields);
   args_code_effect : forall F C who names args types, PreservesOldCode (EaExpr.args E R fuel F C who names args types);
   cond_code_effect : forall F C cond, PreservesOldCode (EaExpr.cond E R fuel F C cond);
   branch_code_effect : forall F C branch expected, PreservesOldCode (EaExpr.branch E R fuel F C branch expected);
@@ -76,7 +77,7 @@ Proof.
   - constructor; intros; apply code_effect_fail.
   - destruct IH.
     constructor; intros;
-      cbn [EaExpr.ex EaExpr.read_global_value EaExpr.read_constant EaExpr.mmap_fields EaExpr.args EaExpr.cond EaExpr.branch EaExpr.arms
+      cbn [EaExpr.ex EaExpr.read_global_value EaExpr.read_constant EaExpr.mmap_fields EaExpr.synth_fields EaExpr.args EaExpr.cond EaExpr.branch EaExpr.arms
         EaExpr.arms_list EaExpr.meth_call EaExpr.provided EaExpr.blke EaExpr.blk];
       expression_effect.
 Qed.

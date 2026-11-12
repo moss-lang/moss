@@ -292,12 +292,12 @@ Theorem body_translation_agrees : forall W P resolve,
   (forall F C branch expected plan t, TypesBranch W F C branch expected plan t ->
     CheckedEmission W P (expression_emission resolve F C plan)
       (fun code => Branch W P F C branch expected code t)) /\
-  (forall F C given fields plans, TypesRecordFields W F C given fields plans ->
+  (forall F C given exp fields plans, TypesRecordFields W F C given exp fields plans ->
     CheckedEmission W P (record_fields_emission resolve F C plans)
       (Forall2 (fun ft xf => fst xf = fst ft /\
         exists n source actual, n = fst ft /\ In (n, source) given /\
-          Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
-            (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft)) fields)) /\
+          Ex W P F C (record_field_source n source)
+            (record_field_expected exp (snd ft)) (snd xf) actual /\ record_field_fits exp actual (snd ft)) fields)) /\
   (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
     CheckedEmission W P (arms_emission resolve F C plans)
       (fun code => Arms W P F C st arms exp code t)) /\
@@ -319,7 +319,7 @@ Proof.
       splice_bindings fold_right map flat_map app] in *;
     intros; use_placements;
     eauto 8 using ExUnit, ExThis, ExLocal, ExBlock, ExIfThen, ExIfElse, ExReturnUnit, ExReturn,
-    ExBreak, ExCallD, ExCallA, ExBareTag, ExTag, ExRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
+    ExBreak, ExCallD, ExCallA, ExBareTag, ExTag, ExRecord, ExBareRecord, ExField, ExMatch, ExMeth, ExUnary, ExBinary,
     ExLit, ExVal, ExCallBr, provided_method_translation, method_call_translation, literal_translation,
     BlkECheck, BlkTail, BlkEmpty, BlkLet, BlkAssign, BlkExprLast, BlkExpr, BlkWhile, BlkLoop,
     BlkLoopLast, ArgsNil, ArgsCons, CondBool, BranchBlock, BranchExpr, Forall2_nil, ArmsEmptyNever,
@@ -437,16 +437,16 @@ Proof.
   end.
 Qed.
 
-Theorem record_fields_have_plan : forall W P F C given fields code,
+Theorem record_fields_have_plan : forall W P F C given expected fields code,
   (forall n source, In (n, source) given ->
-    HasExpressionPlan W P F C (match source with Some e => e | None => AEPath [n] None end)) ->
+    HasExpressionPlan W P F C (record_field_source n source)) ->
   Forall2 (fun ft xf => fst xf = fst ft /\
     exists n source actual, n = fst ft /\ In (n, source) given /\
-      Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
-        (Some (snd ft)) (snd xf) actual /\ fits actual (snd ft)) fields code ->
-  exists plan, TypesRecordFields W F C given fields plan /\ translate_record_fields F C plan = code.
+      Ex W P F C (record_field_source n source)
+        (record_field_expected expected (snd ft)) (snd xf) actual /\ record_field_fits expected actual (snd ft)) fields code ->
+  exists plan, TypesRecordFields W F C given expected fields plan /\ translate_record_fields F C plan = code.
 Proof.
-  intros W P F C given fields code Children Typed. induction Typed as
+  intros W P F C given expected fields code Children Typed. induction Typed as
     [|[n t] [n' expression] fields code [Same (binder & source & actual & Field & Present & Child & Fits)] Tail IH].
   - exists []. split; [constructor|reflexivity].
   - cbn [fst snd] in *. subst binder n'.
@@ -464,7 +464,7 @@ Proof.
   lazymatch goal with
   | Payload : PayloadOf W ?tag ?arguments (TRecord ?field_types),
     Fields : Forall2 _ ?field_types ?field_code |- _ =>
-    destruct (record_fields_have_plan W P F C given field_types field_code Children Fields)
+    destruct (record_fields_have_plan W P F C given (Some (TRecord field_types)) field_types field_code Children Fields)
       as (plans & TypedFields & <-);
     exists (PlanRecord tag arguments plans); split; [eapply TypesRecord; eassumption|reflexivity]
   end.
@@ -635,8 +635,8 @@ Theorem body_typing_renumber : forall W,
     forall slots, SameLocalNames F slots -> TypesCond W (renumber_body_frame F slots) C condition plan) /\
   (forall F C branch expected plan t, TypesBranch W F C branch expected plan t ->
     forall slots, SameLocalNames F slots -> TypesBranch W (renumber_body_frame F slots) C branch expected plan t) /\
-  (forall F C given fields plans, TypesRecordFields W F C given fields plans ->
-    forall slots, SameLocalNames F slots -> TypesRecordFields W (renumber_body_frame F slots) C given fields plans) /\
+  (forall F C given exp fields plans, TypesRecordFields W F C given exp fields plans ->
+    forall slots, SameLocalNames F slots -> TypesRecordFields W (renumber_body_frame F slots) C given exp fields plans) /\
   (forall F C st arms exp plans t, TypesArms W F C st arms exp plans t ->
     forall slots, SameLocalNames F slots -> TypesArms W (renumber_body_frame F slots) C st arms exp plans t) /\
   (forall F C st arms exp plans covered catch t, TypesArmList W F C st arms exp plans covered catch t ->
@@ -651,7 +651,7 @@ Theorem body_typing_renumber : forall W,
 Proof.
   intros W. apply body_typing_ind; intros;
     eauto 9 using TypesUnit, TypesThis, TypesLocal, TypesBlock, TypesIfThen, TypesIfElse, TypesReturnUnit,
-    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesBareTag, TypesTag, TypesRecord,
+    TypesReturn, TypesBreak, TypesDefinedCall, TypesAbstractCall, TypesBareTag, TypesTag, TypesRecord, TypesBareRecord,
     TypesField, TypesMatch, TypesMethod, TypesUnary, TypesBinary, TypesNumeric, TypesGlobalValue,
     TypesConstant, TypesBracketedCall, method_selection_renumber, TypesBlkCheck, TypesTail, TypesEmpty, TypesLet, TypesAssign, TypesExprLast,
     TypesExprThen, TypesWhile, TypesLoop, TypesLoopLast, TypesArgsNil, TypesArgsCons, TypesBool,

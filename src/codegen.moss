@@ -2997,21 +2997,67 @@ assume Std {
       ty
     }
 
+    fn bare_record(e: Int): Bool {
+      if ast::kind_of(e) != ast::k_ex_record() { return false; }
+      !ast::is_some(ast::a_of(e))
+    }
+
+    fn record_field_value(field: Int): Int {
+      if ast::is_some(ast::b_of(field)) { return ast::b_of(field); }
+      let names = int_list();
+      names.push(ast::a_of(field));
+      ast::node4(ast::k_ex_path(), ast::path_of(names), ast::none(), 0, 0)
+    }
+
+    # In synthesis the written fields determine the type and its layout.
+    fn infer_record(body: IntList, e: Int, m: Int, emit: Bool): Int {
+      let members = int_list();
+      var i = 0;
+      while i < ast::c_of(e) {
+        let field = ast::kid_at(ast::b_of(e), i);
+        let name = ast::a_of(field);
+        if emit {
+          var j = 0;
+          while j < members.length() {
+            if members.get(j) == name { cg_error(c_bad_type(), name); }
+            j = j + 2;
+          }
+        }
+        let value = record_field_value(field);
+        let ty = if emit { emit_expr(body, value, m) } else { type_of(value, m) };
+        members.push(name);
+        members.push(ty);
+        i = i + 1;
+      }
+      types::intern_ty(types::kd_record(), ast::none(), members)
+    }
+
     # `Tag { f = e, ... }`: the payload's fields, in the record's own
     # order whatever order they are written in. Every field once, and
     # only fields the record has.
-    fn emit_record(body: IntList, e: Int, m: Int): Int {
-      let path = ast::a_of(ast::a_of(e));
-      let sym = prog::resolve_path(m, path);
-      if !ast::is_some(sym) {
-        semantic_error(prog::e_scope(), ast::path_last(path));
-        return ty_none();
-      }
-      let nominal = tag_type(ast::a_of(e), sym, m);
-      let rec = types::record_of(nominal);
-      if !ast::is_some(rec) {
-        cg_error(c_bad_type(), prog::sym_name.get(sym));
-        return ty_none();
+    fn emit_record(body: IntList, e: Int, m: Int, expected: Int): Int {
+      var result = expected;
+      var rec = expected;
+      let bare = bare_record(e);
+      if bare {
+        if !ast::is_some(expected) { return infer_record(body, e, m, true); }
+        if !types::is_kind(expected, types::kd_record()) {
+          cg_error(c_bad_type(), ast::none());
+          return ty_none();
+        }
+      } else {
+        let path = ast::a_of(ast::a_of(e));
+        let sym = prog::resolve_path(m, path);
+        if !ast::is_some(sym) {
+          semantic_error(prog::e_scope(), ast::path_last(path));
+          return ty_none();
+        }
+        result = tag_type(ast::a_of(e), sym, m);
+        rec = types::record_of(result);
+        if !ast::is_some(rec) {
+          cg_error(c_bad_type(), prog::sym_name.get(sym));
+          return ty_none();
+        }
       }
       var i = 0;
       while i < ast::c_of(e) {
@@ -3043,6 +3089,8 @@ assume Std {
         }
         if !ast::is_some(given) {
           cg_error(c_bad_type(), name);
+        } else if bare {
+          emit_as(body, record_field_value(given), m, ty);
         } else if ast::is_some(ast::b_of(given)) {
           emit_as(body, ast::b_of(given), m, ty);
         } else {
@@ -3056,7 +3104,7 @@ assume Std {
         }
         f = f + 1;
       }
-      nominal
+      result
     }
 
     # What `Tag { ... }` destructures: the nominal's payload, when that is a
@@ -3321,6 +3369,7 @@ assume Std {
         );
       }
       if k == ast::k_ex_record() {
+        if bare_record(e) { return infer_record(int_list(), e, m, false); }
         let sym = prog::resolve_path(m, ast::a_of(ast::a_of(e)));
         if !ast::is_some(sym) {
           return ty_none();
@@ -3771,7 +3820,7 @@ assume Std {
         return emit_method(body, e, m);
       }
       if k == ast::k_ex_record() {
-        return emit_record(body, e, m);
+        return emit_record(body, e, m, ast::none());
       }
       if k == ast::k_ex_field() {
         return emit_field(body, e, m);
@@ -4452,6 +4501,9 @@ assume Std {
       if !ast::is_some(want) {
         return emit_expr(body, e, m);
       }
+      if bare_record(e) {
+        return emit_record(body, e, m, want);
+      }
       let k = ast::kind_of(e);
       if k == ast::k_ex_if() {
         return emit_if_as(body, e, m, want);
@@ -4468,10 +4520,12 @@ assume Std {
       # what it declared. Both are generic — the code as written, where
       # two generations of a type are two types (D72) however this
       # specialization makes them — so the answer is the same in every
-      # specialization. A got with no width is either real unit or a body
-      # that jumped out — this back end types both as unit — so only a
-      # valued got is held to it.
-      if width(got) > 0 {
+      # specialization. Record types must also agree when they occupy no
+      # slots, for instance `{}` and `()` have different types.
+      let check_fit = if width(got) > 0 { true }
+        else if types::is_kind(got, types::kd_record()) { true }
+        else { types::is_kind(want, types::kd_record()) };
+      if check_fit {
         if !types::fits(got, want) {
           cg_error(c_bad_type(), ast::none());
         }

@@ -512,11 +512,11 @@ Proof.
   (* parse_arms *)
   - intros ts v rest H He Hn. simpl. destruct H as [| ? ? ? ? ? Hb ? ? Hp Ht Hbody Ha]; firsts.
     + step. fin.
-    + step. exp pattern_complete Pattern n. step. destruct Hbody as [? ? ? ? Hb' Ho | | ]; firsts.
-      * step. ihp IH15 Block. rewrite (OptTk_eat_eq _ _ _ Ho).
+    + step. exp pattern_complete Pattern n. step. destruct Hbody as [? ? ? ? Ahead Hb' Ho | | ]; firsts.
+      * rewrite Ahead. ihp IH15 Block. rewrite (OptTk_eat_eq _ _ _ Ho).
         destruct (OptTk_ends _ _ _ Ho ltac:(discriminate) ltac:(assumption)). ihp IH3 Arms. fin.
-      * step. ihp IH1 Expr. step. ihp IH3 Arms. fin.
-      * step. ihp IH1 Expr. step. ihp IH3 Arms. fin.
+      * match goal with H : bare_block_ahead _ = false |- _ => rewrite H end. ihp IH1 Expr. step. ihp IH3 Arms. fin.
+      * match goal with H : bare_block_ahead _ = false |- _ => rewrite H end. ihp IH1 Expr. step. ihp IH3 Arms. fin.
   (* parse_operators *)
   - intros nr ts v rest H He Hn. simpl. destruct H as [? ? u ts1 op e ts2 Hu Hb Hin Hc Hr
                                                     | ? ? l ts1 op r ts2 Ho Hb Hin Ho2 Hr | ? ? e ts1 Ho Hr].
@@ -603,12 +603,16 @@ Proof.
     + step. cbn [andb]. step. fin.
     + step. cbn [andb]. step. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
     + step. cbn [andb]. step. rewrite H0. destruct (ends_advance ts He); [intro E; rewrite E in *; simpl in *; intuition discriminate|]. fin.
-    + step. cbn [andb negb]. step. ihp IH15 Block. fin.
+    + step. cbn [andb negb]. step. match goal with H : bare_record_ahead _ = false |- _ => rewrite H end. ihp IH15 Block. fin.
     + step. cbn [andb negb]. step. exp path_complete Path n. exp app_complete App n. step.
       destruct H2 as [-> | Hk]; [cbn [negb]; rewrite andb_false_r | rewrite at_neq by auto]; cbn [andb]; fin.
     + step. cbn [andb negb]. step. exp path_complete Path n. exp app_complete App n. step.
       clistx n ltac:(apply Ok1_Ok; apply IH1; auto; lia). step. fin.
     + step. cbn [andb negb]. step. exp path_complete Path n. exp app_complete App n. step. cbn [andb negb].
+      clistx n ltac:(match goal with H : RecField _ _ _ |- _ => destruct H end;
+                     step; try ihp IH1 Expr; fin).
+      step. fin.
+    + step. cbn [andb negb]. step. match goal with H : bare_record_ahead _ = true |- _ => rewrite H end. tks.
       clistx n ltac:(match goal with H : RecField _ _ _ |- _ => destruct H end;
                      step; try ihp IH1 Expr; fin).
       step. fin.
@@ -625,7 +629,9 @@ Proof.
     + step. cbn [orb]. step. ihp IH1 Expr. ihp IH15 Block. ihp IH16 Stmts. fin.
     + rewrite kind_at1. step. cbn [orb andb]. step. match goal with H : kind (advance ts) = _ |- _ => rewrite H end. rewrite token_kind_eqb_refl. cbv iota. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
     + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
-    + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. ihp IH16 Stmts. fin.
+    + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step.
+      match goal with H : braced_statement_ahead _ = true |- _ => rewrite H end.
+      ihp IH16 Stmts. fin.
     + rewrite assign_bool by auto. step. cbn [orb andb]. step. ihp IH1 Expr. step. fin.
   (* parse_bind *)
   - intros ts v rest H He Hn. simpl. destruct H. step.

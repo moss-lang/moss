@@ -12,7 +12,7 @@ context Right = B, seed[P=B];
 fn out();
 functor Target[B]: B, seed[P=B] -> out;
 functor Provider: Left, Right, captured[P=A] -> out {
-  bind out = () => {};
+  bind out = () => ();
 }
 context Captured = captured[P=A];
 assume Left, Right, Captured {

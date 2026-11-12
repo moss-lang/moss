@@ -22,7 +22,7 @@ functor F: T, Std -> T.m, done;
 functor G: Make, Std -> T.m, done {
   bind Make;
   bind T.m = () => { print_int(this.num()); putchar(char::newline); };
-  bind done = () => {};
+  bind done = () => ();
 }
 
 assume Std {

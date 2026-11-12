@@ -153,6 +153,71 @@ Proof.
     now apply EaNumbering.checked_parameters_distinct|exact Arity|exact Proof].
 Qed.
 
+Theorem synth_fields_sound : forall n,
+  (forall depth, depth < n -> Expr depth) ->
+  forall F C fs,
+  Checked post (valid F C) (fun _ => valid F C) (synth_fields E R n F C fs)
+    (fun '(types, values) _ =>
+      map fst fs = map fst types /\
+      Forall2 (fun ft xf => fst xf = fst ft /\
+        exists n v vt, n = fst ft /\ In (n, v) fs /\
+          Ex W P F C (record_field_source n v) None (snd xf) vt /\ vt = snd ft) types values).
+Proof.
+  induction n as [|n IH]; intros Below F C fs before [types values] after Run; [discriminate|].
+  cbn [synth_fields] in Run. destruct fs as [|[name syntax] rest].
+  - injection Run as <- <- <-. split; [tauto|intros Valid _; repeat split; [exact Valid|constructor]].
+  - apply mbind_ok in Run as ([value actual] & middle & Head & Run).
+    apply mbind_ok in Run as ([field_types field_values] & final & Tail & Run).
+    injection Run as <- <- <-.
+    destruct (Below n ltac:(lia) _ _ _ _ _ _ _ Head) as [Earlier TypedHead].
+    destruct (IH (fun depth Lt => Below depth ltac:(lia)) _ _ _ _ _ _ Tail) as [Backward TypedTail].
+    split; [intros Post; now apply Earlier, Backward|]. intros Valid Post.
+    destruct (TypedHead Valid (Backward Post)) as [Middle Typed].
+    destruct (TypedTail Middle Post) as [Final [Names Fields]].
+    split; [exact Final|]. split; [cbn; now f_equal|]. constructor.
+    + split; [reflexivity|]. exists name, syntax, actual. cbn [fst snd].
+      split; [reflexivity|split; [now left|split; [exact Typed|reflexivity]]].
+    + eapply Forall2_impl; [|exact Fields].
+      intros ft xf [Same (n' & v & t & Label & Present & Child & SameType)].
+      split; [exact Same|]. exists n', v, t.
+      split; [exact Label|split; [now right|split; assumption]].
+Qed.
+
+Theorem bare_record_expression_sound : forall n,
+  (forall depth, depth < n -> Expr depth) ->
+  forall F C fields expected,
+  Action F C (AEBareRecord fields) expected
+    (ex E R (S n) F C (AEBareRecord fields) expected).
+Proof.
+  intros n Below F C fields expected before [value t] after Run.
+  cbn [ex] in Run.
+  apply mbind_ok in Run as (distinct & middle & Distinct & Run).
+  destruct (suniq_dup (map fst fields)) eqn:NoDuplicates; [discriminate Distinct|].
+  injection Distinct as _ <-.
+  assert (Unique : NoDup (map fst fields)) by now apply EaNumbering.checked_parameters_distinct.
+  destruct expected as [expected|].
+  - destruct expected as [|field_types| | | |]; try discriminate.
+    apply mbind_ok in Run as (checked_types & middle & TypeCheck & Run).
+    destruct (suniq_dup (map fst field_types)) eqn:DistinctTypes; [discriminate TypeCheck|].
+    injection TypeCheck as _ <-.
+    apply mbind_ok in Run as (arity & middle & Check & Run).
+    apply check_result in Check as [Arity [_ <-]]. apply Nat.eqb_eq in Arity.
+    apply mbind_ok in Run as (values & finish & Fields & Run).
+    injection Run as <- <- <-.
+    destruct (record_fields_sound n Below _ _ _ _ _ _ _ Fields) as [Backward Typed].
+    split; [exact Backward|]. intros Valid Post.
+    destruct (Typed Valid Post) as [Final Evidence]. split; [exact Final|].
+    eapply ExBareRecord; [exact Unique|exact Arity| |exact Evidence].
+    split; [reflexivity|now apply EaNumbering.checked_parameters_distinct].
+  - apply mbind_ok in Run as ([field_types values] & finish & Fields & Run).
+    injection Run as <- <- <-.
+    destruct (synth_fields_sound n Below _ _ _ _ _ _ Fields) as [Backward Typed].
+    split; [exact Backward|]. intros Valid Post.
+    destruct (Typed Valid Post) as [Final [Names Evidence]]. split; [exact Final|].
+    eapply ExBareRecord; [exact Unique| |exact Names|exact Evidence].
+    apply (f_equal (@List.length fld)) in Names. now rewrite !map_length in Names.
+Qed.
+
 Theorem field_expression_sound : forall n,
   Expr n ->
   forall F C receiver field expected,

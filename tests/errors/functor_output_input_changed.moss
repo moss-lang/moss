@@ -8,9 +8,9 @@ functor Make: -> T;
 functor Maker: -> T { bind T = Concrete; }
 functor Target[T]: T -> T.out, done;
 functor Provider: T, Make -> T.out, done {
-  bind T.out = () => {};
+  bind T.out = () => ();
   bind Make;
-  bind done = () => {};
+  bind done = () => ();
 }
 fn main() {
   bind T = Concrete;

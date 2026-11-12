@@ -1,0 +1,18 @@
+import "../../lib/wasm.moss" as w use Wasm, I32, I64;
+import "../../lib/wasip1.moss" use WasiCore, proc_exit;
+
+assume Wasm, WasiCore {
+  fn add(x: I32, y: I32): I32 { w::i32_add(x, y) }
+  fn empty(r: {}): {} { r }
+
+  fn main() {
+    let z = empty({});
+    let a = w::i32_one;
+    let p = { a, b = add(a, a), inner = { a, } };
+    let q: { left: I32, right: I64 } = { right = w::i64_extend_i32_u(a), left = p.inner.a };
+    var x = w::i32_zero;
+    let y = { x = add(a, q.left); x };
+    let m = match True { True => { r = add(p.b, y) } };
+    proc_exit(add(add(m.r, y), { a }));
+  }
+}

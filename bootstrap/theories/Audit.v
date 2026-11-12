@@ -58,6 +58,7 @@ Inductive aexpr : Type :=
 | AEBinary : name -> aexpr -> aexpr -> aexpr
 | AELit    : string -> aexpr
 | AELam    : list (name * option aty) -> option aty -> aexpr -> aexpr
+| AEBareRecord : list (name * option aexpr) -> aexpr
 with ablock : Type :=
 | ABlock : list astmt -> option aexpr -> ablock
 with astmt : Type :=
@@ -764,6 +765,35 @@ Definition at_lambda (ts : list token) : bool :=
     else token_kind_eqb (kind_at 2 ts) RPAREN && arrow (kind_at 3 ts)
   else false.
 
+(* At an expression brace, distinguish a first field initializer from a
+   first assignment. Only separators at the brace's own depth count. *)
+Fixpoint record_separator (depth : nat) (ts : list token) : bool :=
+  match ts with
+  | [] => false
+  | t :: rest =>
+      match tk t, depth with
+      | EOF, _ => false
+      | COMMA, 0 | RBRACE, 0 => true
+      | SEMI, 0 | RPAREN, 0 | RBRACKET, 0 => false
+      | LPAREN, _ | LBRACKET, _ | LBRACE, _ => record_separator (S depth) rest
+      | RPAREN, S d | RBRACKET, S d | RBRACE, S d => record_separator d rest
+      | _, _ => record_separator depth rest
+      end
+  end.
+
+Definition bare_record_ahead (ts : list token) : bool :=
+  match kind_at 1 ts, kind_at 2 ts with
+  | RBRACE, _ | NAME, COMMA => true
+  | NAME, EQUAL => record_separator 0 (skipn 3 ts)
+  | _, _ => false
+  end.
+
+Definition bare_block_ahead (ts : list token) : bool :=
+  token_kind_eqb (kind ts) LBRACE && negb (bare_record_ahead ts).
+
+Definition braced_statement_ahead (ts : list token) : bool :=
+  token_kind_eqb (kind ts) IF || token_kind_eqb (kind ts) MATCH || bare_block_ahead ts.
+
 (* D68: `-` before a literal with a method call or field (`-1.abs()`) is
    refused: `-` binds looser than `.`, and nobody means `-(1.abs())`. *)
 Definition neg_literal_dot (ts : list token) : Prop :=
@@ -820,16 +850,17 @@ with Cond : list token -> aexpr -> list token -> Prop :=
     Block ts2 t ts3 -> Tk ELSE ts3 ts4 -> Block ts4 b ts5 -> Cond ts (AEIf c t (Some (AEBlock b))) ts5
 
 (* a ::= π => e, | π => b ,?   — and the last arm's `,` is optional in
-   both forms; an arm body starting with `{` is the block form (b). *)
+   both forms. A leading record literal takes the expression form. *)
 with Arms : list token -> list (apat * aexpr) -> list token -> Prop :=
 | ArmsEnd : forall ts, kind ts = RBRACE -> Arms ts [] ts
 | ArmsCons : forall ts p ts1 ts2 body ts3 arms ts4, Pattern ts p ts1 -> Tk EQUAL_GREATER ts1 ts2 ->
     ArmBody ts2 body ts3 -> Arms ts3 arms ts4 -> Arms ts ((p, body) :: arms) ts4
 with ArmBody : list token -> aexpr -> list token -> Prop :=
-| ArmBlock : forall ts b ts1 ts2, Block ts b ts1 -> OptTk COMMA ts1 ts2 -> ArmBody ts (AEBlock b) ts2
-| ArmExpr : forall ts e ts1 ts2, kind ts <> LBRACE -> Expr false ts e ts1 -> Tk COMMA ts1 ts2 ->
+| ArmBlock : forall ts b ts1 ts2, bare_block_ahead ts = true ->
+    Block ts b ts1 -> OptTk COMMA ts1 ts2 -> ArmBody ts (AEBlock b) ts2
+| ArmExpr : forall ts e ts1 ts2, bare_block_ahead ts = false -> Expr false ts e ts1 -> Tk COMMA ts1 ts2 ->
     ArmBody ts e ts2
-| ArmExprLast : forall ts e ts1, kind ts <> LBRACE -> Expr false ts e ts1 -> kind ts1 = RBRACE ->
+| ArmExprLast : forall ts e ts1, bare_block_ahead ts = false -> Expr false ts e ts1 -> kind ts1 = RBRACE ->
     ArmBody ts e ts1
 
 (* e ⊕ e, D68's partial order.  An operator expression is one of
@@ -900,7 +931,8 @@ with Primary : bool -> list token -> aexpr -> list token -> Prop :=
 | PrimString : forall nr ts, kind ts = STRING ->
     string_utf8_valid (string_value (tx (peek ts))) = true ->
     Primary nr ts (string_desugar (string_value (tx (peek ts)))) (advance ts)
-| PrimBlock : forall ts b ts1, Block ts b ts1 -> Primary false ts (AEBlock b) ts1
+| PrimBlock : forall ts b ts1, bare_record_ahead ts = false ->
+    Block ts b ts1 -> Primary false ts (AEBlock b) ts1
 | PrimRef : forall nr ts p ts1 a ts2, Path ts p ts1 -> App ts1 a ts2 -> kind ts2 <> LPAREN ->
     (nr = true \/ kind ts2 <> LBRACE) -> Primary nr ts (AEPath p a) ts2
 | PrimCall : forall nr ts p ts1 a ts2 ts3 args ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
@@ -909,6 +941,9 @@ with Primary : bool -> list token -> aexpr -> list token -> Prop :=
 | PrimRecord : forall ts p ts1 a ts2 ts3 fs ts4 ts5, Path ts p ts1 -> App ts1 a ts2 ->
     Tk LBRACE ts2 ts3 -> CommaList RecField [RBRACE] ts3 fs ts4 -> Tk RBRACE ts4 ts5 ->
     Primary false ts (AERec p a fs) ts5
+| PrimBareRecord : forall ts ts1 fs ts2 ts3, Tk LBRACE ts ts1 -> bare_record_ahead ts = true ->
+    CommaList RecField [RBRACE] ts1 fs ts2 -> Tk RBRACE ts2 ts3 ->
+    Primary false ts (AEBareRecord fs) ts3
 with RecField : list token -> name * option aexpr -> list token -> Prop :=
 | RecFieldShort : forall ts x ts1, TkName ts x ts1 -> kind ts1 <> EQUAL -> RecField ts (x, None) ts1
 | RecFieldLong : forall ts x ts1 ts2 e ts3, TkName ts x ts1 -> Tk EQUAL ts1 ts2 -> Expr false ts2 e ts3 ->
@@ -928,8 +963,8 @@ with Block : list token -> ablock -> list token -> Prop :=
 (* i ...  e?: the statements of a block, and its trailing expression.
    i ::= let x (: τ)? = e; | var x (: τ)? = e; | x = e; | w
        | while e b | loop b | for x in e b | e; | e
-   An expression statement without `;` must START with `if`, `match` or
-   `{` and not be followed by `;` or `}` (then it is the trailing
+   An expression statement without `;` must start with `if`, `match` or
+   a bare block and not be followed by `;` or `}` (then it is the trailing
    expression).  The expression rules are tried only where no keyword
    statement and no `x = ...` is next (b). *)
 with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
@@ -952,7 +987,7 @@ with Stmts : list token -> list astmt -> option aexpr -> list token -> Prop :=
     Expr false ts2 e ts3 -> Tk SEMI ts3 ts4 -> Stmts ts4 ss tl ts5 -> Stmts ts (ASAssign x e :: ss) tl ts5
 | StExpr : forall ts e ts1 ts2 ss tl ts3, ~ assign_ahead ts -> Expr false ts e ts1 -> Tk SEMI ts1 ts2 ->
     Stmts ts2 ss tl ts3 -> Stmts ts (ASExpr e :: ss) tl ts3
-| StBraced : forall ts e ts1 ss tl ts2, ~ assign_ahead ts -> In (kind ts) [IF; MATCH; LBRACE] ->
+| StBraced : forall ts e ts1 ss tl ts2, ~ assign_ahead ts -> braced_statement_ahead ts = true ->
     Expr false ts e ts1 -> ~ In (kind ts1) [SEMI; RBRACE] -> Stmts ts1 ss tl ts2 ->
     Stmts ts (ASExpr e :: ss) tl ts2
 | StTail : forall ts e ts1, ~ assign_ahead ts -> Expr false ts e ts1 -> kind ts1 = RBRACE ->
@@ -4014,6 +4049,7 @@ Inductive Breaks (W : world) : string -> aexpr -> Prop :=
 | BkField : forall md o n, Breaks W md o -> Breaks W md (AEField o n)
 | BkMethRecv : forall md o p args, Breaks W md o -> Breaks W md (AEMeth o p args)
 | BkMethArg : forall md o p args y, In y args -> Breaks W md y -> Breaks W md (AEMeth o p args)
+| BkBareRecord : forall md fs n y, In (n, Some y) fs -> Breaks W md y -> Breaks W md (AEBareRecord fs)
 | BkRec : forall md p a fs n y, In (n, Some y) fs -> Breaks W md y -> Breaks W md (AERec p a fs)
 | BkIfC : forall md c b e, Breaks W md c -> Breaks W md (AEIf c b e)
 | BkIfB : forall md c b e, BlockBreaks W md b -> Breaks W md (AEIf c b e)
@@ -4338,7 +4374,7 @@ Fixpoint free_names (e : aexpr) : list name :=
   | AECall _ _ args => flat_map free_names args
   | AEField receiver _ | AEUnary _ receiver => free_names receiver
   | AEMeth receiver _ args => free_names receiver ++ flat_map free_names args
-  | AERec _ _ fields => flat_map (fun q => match snd q with
+  | AERec _ _ fields | AEBareRecord fields => flat_map (fun q => match snd q with
       | Some value => free_names value | None => [fst q] end) fields
   | AEIf condition body otherwise => free_names condition ++ free_block_names body ++
       match otherwise with Some e => free_names e | None => [] end
@@ -4781,6 +4817,24 @@ Definition ElaboratesWith (b : bundle) (W : world) (P : program)
     (* criteria section 7: every declaration forms as written *)
     forall s, DeclFormsWith W constant s.
 
+Definition record_field_source (n : name) (v : option aexpr) : aexpr :=
+  match v with Some e => e | None => AEPath [n] None end.
+
+Definition record_field_expected (expected : option ty) (field : ty) : option ty :=
+  match expected with Some _ => Some field | None => None end.
+
+Definition record_field_fits (expected : option ty) (actual field : ty) : Prop :=
+  match expected with Some _ => fits actual field | None => actual = field end.
+
+(* In synthesis, a record's fields are ordered as written. Checking uses
+   the expected record's field order, just as a tagged record does. *)
+Definition record_literal_shape (given : list (fld * option aexpr)) (expected : option ty)
+    (fields : list (fld * ty)) : Prop :=
+  match expected with
+  | None => map fst given = map fst fields
+  | Some t => t = TRecord fields /\ NoDup (map fst fields)
+  end.
+
 Module Export Typing.
 
 (* Named providers *)
@@ -5174,6 +5228,7 @@ Inductive expression_plan : Type :=
     (arguments : subst) (demands : list family_use) (call_site : cx) (args : list expression_plan)
 | PlanAbstractCall (f : nat) (args : list expression_plan)
 | PlanTag (tag : nat) (arguments : subst) (payload : expression_plan)
+| PlanBareRecord (fields : list (fld * expression_plan))
 | PlanRecord (tag : nat) (arguments : subst) (fields : list (fld * expression_plan))
 | PlanField (object : expression_plan) (field : fld)
 | PlanMatch (scrutinee : expression_plan) (arms : list (pattern_plan * expression_plan))
@@ -5315,8 +5370,13 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
     PayloadOf W tag arguments (TRecord fields) ->
     NoDup (map fst given) -> List.length given = List.length fields ->
-    TypesRecordFields W F C given fields plans ->
+    TypesRecordFields W F C given (Some (TRecord fields)) fields plans ->
     TypesExpr W F C (AERec path brackets given) exp (PlanRecord tag arguments plans) (TNom tag arguments)
+| TypesBareRecord : forall F C exp given fields plans,
+    NoDup (map fst given) -> List.length given = List.length fields ->
+    record_literal_shape given exp fields ->
+    TypesRecordFields W F C given exp fields plans ->
+    TypesExpr W F C (AEBareRecord given) exp (PlanBareRecord plans) (TRecord fields)
 | TypesField : forall F C exp object field plan actual payload t,
     TypesExpr W F C object None plan actual ->
     ((exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\
@@ -5432,13 +5492,13 @@ with TypesBranch (W : world) : frame -> cx -> aexpr -> option ty -> expression_p
     (forall b, e <> AEBlock b) -> TypesExpr W F C e exp plan t ->
     TypesBranch W F C e exp plan t
 with TypesRecordFields (W : world) : frame -> cx -> list (name * option aexpr) ->
-    list (fld * ty) -> list (fld * expression_plan) -> Prop :=
-| TypesRecordFieldsEmpty : forall F C given, TypesRecordFields W F C given [] []
-| TypesRecordFieldsCons : forall F C given n t syntax plan actual rest plans,
+    option ty -> list (fld * ty) -> list (fld * expression_plan) -> Prop :=
+| TypesRecordFieldsEmpty : forall F C given exp, TypesRecordFields W F C given exp [] []
+| TypesRecordFieldsCons : forall F C given exp n t syntax plan actual rest plans,
     In (n, syntax) given ->
-    TypesExpr W F C (match syntax with Some e => e | None => AEPath [n] None end) (Some t) plan actual ->
-    fits actual t -> TypesRecordFields W F C given rest plans ->
-    TypesRecordFields W F C given ((n, t) :: rest) ((n, plan) :: plans)
+    TypesExpr W F C (record_field_source n syntax) (record_field_expected exp t) plan actual ->
+    record_field_fits exp actual t -> TypesRecordFields W F C given exp rest plans ->
+    TypesRecordFields W F C given exp ((n, t) :: rest) ((n, plan) :: plans)
 with TypesArms (W : world) : frame -> cx -> ty -> list (apat * aexpr) ->
     option ty -> list (pattern_plan * expression_plan) -> ty -> Prop :=
 | TypesArmsEmpty : forall F C exp,
@@ -5860,6 +5920,9 @@ Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
         (emit_each (emit_expr resolve slots C) args)
   | PlanAbstractCall f args => emit_map (EInvoke f) (emit_each (emit_expr resolve slots C) args)
   | PlanTag tag arguments payload => emit_map (ETag tag arguments) (emit_expr resolve slots C payload)
+  | PlanBareRecord fields =>
+      emit_map ERecord
+        (emit_each (fun '(n, child) => emit_map (pair n) (emit_expr resolve slots C child)) fields)
   | PlanRecord tag arguments fields =>
       emit_map (fun values => ETag tag arguments (ERecord values))
         (emit_each (fun '(n, child) => emit_map (pair n) (emit_expr resolve slots C child)) fields)

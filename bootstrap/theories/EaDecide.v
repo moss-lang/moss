@@ -47,7 +47,7 @@ Fixpoint breaks (n : nat) (md : string) (e : aexpr) {struct n} : option bool :=
       | AECall _ _ args => any_break (breaks n' md) args
       | AEField o _ => breaks n' md o
       | AEMeth o _ args => break_or (breaks n' md o) (fun _ => any_break (breaks n' md) args)
-      | AERec _ _ fs => any_break (fun q => optional_break (breaks n' md) (snd q)) fs
+      | AERec _ _ fs | AEBareRecord fs => any_break (fun q => optional_break (breaks n' md) (snd q)) fs
       | AEIf c b oe =>
           break_or (breaks n' md c) (fun _ =>
             break_or (block_breaks n' md b) (fun _ => optional_break (breaks n' md) oe))
@@ -208,7 +208,7 @@ Fixpoint ex_names (n : nat) (md : string) (e : aexpr) {struct n} : list name :=
           flat_map (ex_names n' md) args
       | AEField o _ | AEUnary _ o => ex_names n' md o
       | AEMeth o _ args => ex_names n' md o ++ flat_map (ex_names n' md) args
-      | AERec _ _ fs => flat_map (fun q => match snd q with Some y => ex_names n' md y | None => [] end) fs
+      | AERec _ _ fs | AEBareRecord fs => flat_map (fun q => match snd q with Some y => ex_names n' md y | None => [] end) fs
       | AEIf c b oe => ex_names n' md c ++ block_names n' md b ++ match oe with Some y => ex_names n' md y | None => [] end
       | AEMatch s arms => ex_names n' md s ++ flat_map (fun q => pat_names (fst q) ++ ex_names n' md (snd q)) arms
       | AEReturn (Some y) => ex_names n' md y

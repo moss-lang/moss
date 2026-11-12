@@ -493,7 +493,7 @@ with parse_arms (n : nat) (ts : list token) {struct n} : pr (list (apat * aexpr)
       let@ p & ts := parse_pattern n ts in
       let@ _ & ts := expect EQUAL_GREATER ts in
       let@ body & ts :=
-        (if at_ LBRACE ts then
+        (if bare_block_ahead ts then
            let@ b & ts := parse_block n ts in POk (AEBlock b) (snd (eat COMMA ts))
          else
            let@ e & ts := parse_expr n false ts in
@@ -656,6 +656,13 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr
   match n with
   | 0 => fuel_err ts
   | S n =>
+      let record (head : list (name * option aexpr) -> aexpr) ts :=
+        let@ fs & ts := comma_list n (fun ts => let@ x & ts := expect_name ts in
+                                                if at_ EQUAL ts then
+                                                  let@ v & ts := parse_expr n false (advance ts) in
+                                                  POk (x, Some v) ts
+                                                else POk (x, None) ts) [RBRACE] (advance ts) in
+        let@ _ & ts := expect RBRACE ts in POk (head fs) ts in
       if at_ LPAREN ts && at_lambda ts then parse_lambda n ts
       else if at_ LPAREN ts then
         let ts := advance ts in
@@ -669,7 +676,8 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr
         if string_utf8_valid value then POk (string_desugar value) (advance ts)
         else err "invalid UTF-8 in string literal" ts
       else if at_ LBRACE ts && negb nr then
-        let@ b & ts := parse_block n ts in POk (AEBlock b) ts
+        if bare_record_ahead ts then record AEBareRecord ts
+        else let@ b & ts := parse_block n ts in POk (AEBlock b) ts
       else if at_ NAME ts then
         let@ p & ts := parse_path n ts in
         let@ a & ts := parse_app_opt n ts in
@@ -677,14 +685,7 @@ with parse_primary (n : nat) (nr : bool) (ts : list token) {struct n} : pr aexpr
           let@ args & ts := comma_list n (parse_expr n false) [RPAREN] (advance ts) in
           let@ _ & ts := expect RPAREN ts in
           POk (AECall p a args) ts
-        else if at_ LBRACE ts && negb nr then
-          let@ fs & ts := comma_list n (fun ts => let@ x & ts := expect_name ts in
-                                                  if at_ EQUAL ts then
-                                                    let@ v & ts := parse_expr n false (advance ts) in
-                                                    POk (x, Some v) ts
-                                                  else POk (x, None) ts) [RBRACE] (advance ts) in
-          let@ _ & ts := expect RBRACE ts in
-          POk (AERec p a fs) ts
+        else if at_ LBRACE ts && negb nr then record (AERec p a) ts
         else POk (AEPath p a) ts
       else err ("expected an expression, found " ++ kind_name (kind ts)) ts
   end
@@ -732,7 +733,7 @@ with block_loop (n : nat) (ts : list token) {struct n} : pr (list astmt * option
         let@ _ & ts := expect SEMI ts in
         more (ASAssign x e) ts
       else
-        let braced := at_any [IF; MATCH; LBRACE] ts in
+        let braced := braced_statement_ahead ts in
         let@ e & ts := parse_expr n false ts in
         if at_ SEMI ts then more (ASExpr e) (advance ts)
         else if at_ RBRACE ts then POk ([], Some e) ts

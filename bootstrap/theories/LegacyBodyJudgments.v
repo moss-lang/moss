@@ -253,6 +253,14 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     ((exists s xs, ot = TNom s xs /\ kind_sym W s = Some DKTag /\ PayloadOf W s xs rec) \/ rec = ot) ->
     (exists ftys, rec = TRecord ftys /\ slook n ftys = Some t) ->
     Ex W P F C (AEField o n) exp (EField ox (n)) t
+| ExBareRecord : forall F C exp fs ftys xfs,
+    NoDup (map fst fs) -> List.length fs = List.length ftys ->
+    record_literal_shape fs exp ftys ->
+    Forall2 (fun ft xf => fst xf = fst ft /\
+               exists n v vt, n = fst ft /\ In (n, v) fs /\
+                 Ex W P F C (record_field_source n v) (record_field_expected exp (snd ft)) (snd xf) vt /\
+                 record_field_fits exp vt (snd ft)) ftys xfs ->
+    Ex W P F C (AEBareRecord fs) exp (ERecord xfs) (TRecord ftys)
 
 (* the payload type of a tag at its arguments *)
 

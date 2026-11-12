@@ -167,7 +167,7 @@ assume Std {
         dump_run(ast::c_of(id), ast::d_of(id));
       } else if k == ast::k_ex_record() {
         sp();
-        dump(ast::a_of(id));
+        opt_node(ast::a_of(id));
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
       } else if k == ast::k_ex_rfield() {

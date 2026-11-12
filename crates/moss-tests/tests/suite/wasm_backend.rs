@@ -494,6 +494,21 @@ fn a_bound_record_payload_is_a_bare_record() {
     both_exit("tests/wasi/record_payload_shared.moss", 3);
 }
 
+#[test]
+fn anonymous_records_and_blocks_share_braces() {
+    both_exit("tests/wasi/anonymous_record.moss", 7);
+    for program in [
+        "fn main() { {} }",
+        "fn main() { let r: {} = (); }",
+        "fn main() { let r: { a: () } = { b = () }; }",
+        "fn main() { let r = { a = (), a = () }; }",
+    ] {
+        let entry = source(program);
+        rejects(&entry);
+        oracle_rejects(&entry);
+    }
+}
+
 /// Audit.v note 30: acyclic contexts nest to any depth. Cycles are
 /// rejected at declaration, including when used only by a tag.
 #[test]

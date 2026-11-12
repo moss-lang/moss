@@ -104,7 +104,7 @@ Proof.
       receiver fn_name parameters result body| |functor_name arguments inputs outputs body];
       try solve [destruct right; apply code_effect_fail].
     + destruct right as [rhs|]; [|apply code_effect_fail].
-      destruct rhs as [| |target application| | | | | | | | | | | | |];
+      destruct rhs as [| |target application| | | | | | | | | | | | | |];
         try apply code_effect_fail.
       apply code_effect_bind; [apply code_effect_check|intros []].
       apply code_effect_bind; [apply code_effect_pure|]. intro meaning.
@@ -116,7 +116,7 @@ Proof.
       apply code_effect_return.
     + destruct receiver; try solve [destruct right; apply code_effect_fail].
       destruct right as [rhs|]; [|apply code_effect_fail].
-      destruct rhs as [| |provider application| | | | | | | | | | | | |params ann syntax];
+      destruct rhs as [| |provider application| | | | | | | | | | | | |params ann syntax|];
         try apply code_effect_fail.
       * destruct application; [apply code_effect_fail|].
         apply code_effect_bind; [apply code_effect_pure|]. intro signature.
@@ -131,7 +131,7 @@ Proof.
         apply code_effect_bind; [apply Binds|]. intros [[[wrap C'] F'] made].
         apply code_effect_return.
       * destruct right as [rhs|]; [|apply apply_abstract_code_effect].
-        destruct rhs as [| |provider application| | | | | | | | | | | | |]; try apply code_effect_fail.
+        destruct rhs as [| |provider application| | | | | | | | | | | | | |]; try apply code_effect_fail.
         destruct application; [apply code_effect_fail|].
         apply code_effect_bind; [apply code_effect_lift|]. intro g.
         destruct (ast_of (e_W E) g) as [syntax|]; [|apply code_effect_fail].

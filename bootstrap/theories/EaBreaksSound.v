@@ -57,8 +57,15 @@ Proof.
   - intros md e.
     destruct e as [| |path brackets|path brackets args|receiver name|receiver path args|
       path brackets fields|cond body other|scrutinee arms|ret| |body|operator input|
-      operator left right|text|params result body]; cbn [breaks];
-      try solve [intro Impossible; inversion Impossible]; try solve [constructor].
+      operator left right|text|params result body|fields]; cbn [breaks];
+      try solve [intro Impossible; inversion Impossible]; try solve [constructor];
+      try solve [
+        eapply break_answer_iff with (observed := exists field, In field fields /\
+          exists y, snd field = Some y /\ Breaks W md y);
+        [split; [intros [[name [value|]] [Present [y [Equal Break]]]]; [|discriminate];
+                  injection Equal as <-; eauto using BkRec, BkBareRecord
+                |intro Break; inversion Break; subst; eexists (_, Some _); cbn; eauto]
+        |apply any_break_sound; intros; apply optional_break_sound, Expr]].
     + eapply break_answer_iff with (observed := exists arg, In arg args /\ Breaks W md arg).
       * split; [intros [arg [Present Break]]; eapply BkCall; eassumption|intro Break; inversion Break; subst; eauto].
       * apply any_break_sound. intros. apply Expr.
@@ -69,13 +76,6 @@ Proof.
       * split; [intros [Break|[arg [Present Break]]]; eauto using BkMethRecv, BkMethArg|
           intro Break; inversion Break; subst; eauto].
       * apply break_or_sound; [apply Expr|apply any_break_sound; intros; apply Expr].
-    + eapply break_answer_iff with (observed := exists field, In field fields /\
-        exists y, snd field = Some y /\ Breaks W md y).
-      * split.
-        -- intros [[name [value|]] [Present [y [Equal Break]]]]; [|discriminate].
-           injection Equal as <-. eapply BkRec; eassumption.
-        -- intro Break. inversion Break; subst. eexists (_, Some _). cbn. eauto.
-      * apply any_break_sound. intros. apply optional_break_sound, Expr.
     + eapply break_answer_iff with (observed := Breaks W md cond \/ BlockBreaks W md body \/
         exists y, other = Some y /\ Breaks W md y).
       * split.

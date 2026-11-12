@@ -51,7 +51,7 @@ assume Std, note {
 assume Wasm, WasiCore, Branch {
   fn main() {
     bind WasiStd;
-    bind note = (n) => {};
+    bind note = (n) => ();
     print_line((count(5) * 2.0).round());
   }
 }

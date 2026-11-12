@@ -177,11 +177,11 @@ Theorem method_provider_post_sound : forall bundle R,
     (fun '(target, types, prefix, sm) _ => MethProvider W P F C syntax sg receiver target types prefix sm).
 Proof.
   intros bundle R World Caller Function Lambda method F C syntax sg receiver.
-  destruct syntax as [| |path application| |syntax field| | | | | | | | | | |params ann body];
+  destruct syntax as [| |path application| |syntax field| | | | | | | | | | |params ann body|];
     try solve [intros before result after Run; discriminate].
   - destruct application; [intros before result after Run; discriminate|].
     apply wrapped_method_provider_post_sound, Function.
-  - destruct syntax as [| |path application| | | | | | | | | | | | |];
+  - destruct syntax as [| |path application| | | | | | | | | | | | | |];
       try solve [intros before result after Run; discriminate].
     destruct application; [intros before result after Run; discriminate|].
     exact (EaDefinedProviderSound.attached_method_provider_post_sound E P valid post contexts Caller

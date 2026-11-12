@@ -544,7 +544,7 @@ Proof.
     all: rewrite ?kind_at1 in *.
     all: try congruence.
     all: try solve [eauto 8 with fe].
-    all: try solve [eapply StBraced; [unfold assign_ahead; rewrite ?kind_at1; intuition | simpl; intuition
+    all: try solve [eapply StBraced; [unfold assign_ahead; rewrite ?kind_at1; intuition | assumption
                                      | eassumption | simpl; intuition | eassumption]].
     all: try solve [eapply StTail; eauto with fe; unfold assign_ahead; rewrite ?kind_at1; intuition].
     all: try solve [eapply StExpr; eauto with fe; unfold assign_ahead; rewrite ?kind_at1; intuition].

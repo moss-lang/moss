@@ -11,7 +11,7 @@ tag Concrete;
 fn .m();
 context Merge = X, T, X = T;
 functor F[X]: Merge -> X.m;
-functor G: Merge -> X.m { bind T = Bool; bind X.m = () => { }; bind T.m = () => { if this { } }; }
+functor G: Merge -> X.m { bind T = Bool; bind X.m = () => (); bind T.m = () => { if this { } }; }
 fn main() {
   bind T = Concrete;
   bind F = G;

@@ -880,6 +880,16 @@ construction `Some[T=TokenId](expect(Name))` ([D42], [D83]), unit
 values by name (`Eof`), `if`/`else if`/`else` as an expression, and `match`.
 Unary and binary operator expressions are out of the MVP ([D33]).
 
+An anonymous record literal uses braces with no tag, for example
+`{ left = x, right = y }` or `{ x, }` with a shorthand field. The comma
+distinguishes `{ x, }` from the block `{ x }`. An assignment followed by
+a semicolon starts a block. Only separators at the brace's own depth
+count. In expression position, `{}` is an empty record. Where the syntax
+requires a block, including function bodies and `if` branches, `{}` is
+an empty block. An anonymous record with an expected record type checks
+each field and uses that type's field order. When synthesizing, fields
+supply their own types and retain their written order.
+
 *Evaluation order (November 2026, DECIDED by the designer).* A call
 evaluates its receiver first, if it has one, then its arguments left to
 right, then calls: `x.m(a, b)` evaluates `x`, `a`, `b`, and `f(a, b)`
@@ -2454,7 +2464,7 @@ Syntax (an alternative of a **Bind** item's right side only):
 bind narrow = (x: Double) => Single(w::f32_demote_f64(dbl(x)));
 bind narrow = (x) => Single(w::f32_demote_f64(dbl(x)));        # types from the declaration
 bind Stored.widen = () => Double(w::f64_promote_f32(sgl(this)));  # a method: `this` is the receiver
-bind debug = (message) => {};                                      # instead of a named `noop`
+bind debug = (message) => ();                                      # instead of a named `noop`
 bind scale = (x) => x * k;                                         # captures the local `k`
 ```
 
@@ -2593,7 +2603,7 @@ the text above did not fix, it is recorded here.
   (the bootstrap's messages now held as the oracle's, `tests/errors/oracle/`),
   and the parser agreement snippets `LAMBDA_SNIPPETS`.
 - *The gain.* In the thesis's examples (rewritten in a scratch copy),
-  the logging example's `noop` becomes `(message) => {}` (91 to 89
+  the logging example's `noop` becomes `(message) => ()` (91 to 89
   lines) and the precision example's six one-line providers become
   lambdas at their binds (115 to 104 lines); both print the same in
   both compilers.

@@ -162,15 +162,21 @@ Fixpoint read_expr (fuel : nat) (x : sx) : res aexpr :=
           let* o' := read_expr k o in
           let* args' := rmap (read_expr k) args in
           Good (AEMeth o' (split_path p) args')
-      | SL false [SA "o"; SL false [SA "k"; SA p; a]; SL true fs] =>
-          let* a' := read_app k a in
+      | SL false [SA "o"; head; SL true fs] =>
+          let* read_head :=
+            match head with
+            | SA "_" => Good AEBareRecord
+            | SL false [SA "k"; SA p; a] =>
+                let* a' := read_app k a in Good (AERec (split_path p) a')
+            | _ => bad "record head"
+            end in
           let* fs' := rmap (fun f => match f with
                                      | SL false [SA "p"; SA n; SA "_"] => Good (n, None)
                                      | SL false [SA "p"; SA n; v] =>
                                          let* v' := read_expr k v in Good (n, Some v')
                                      | _ => bad "record field"
                                      end) fs in
-          Good (AERec (split_path p) a' fs')
+          Good (read_head fs')
       | SL false [SA "q"; c; t; e] =>
           let* c' := read_expr k c in
           let* t' := read_block k t in
@@ -439,6 +445,7 @@ Fixpoint dexpr (e : aexpr) : sx :=
   | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
   | AEField o f => nd "m" [dexpr o; SA f]
   | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
+  | AEBareRecord fs => nd "o" [SA "_"; sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
   | AERec p a fs => nd "o" [nd "k" [dpath p; dapp a];
                             sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]
   | AEIf c t el => nd "q" [dexpr c; dblock t; dopt dexpr el]

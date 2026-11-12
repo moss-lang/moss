@@ -9,7 +9,7 @@ type B;
 tag P;
 fn .m();
 context R = A = B, A.m;
-functor F: A -> R { bind A.m = () => { }; }
+functor F: A -> R { bind A.m = () => (); }
 fn main() {
   bind A = P;
   bind F;

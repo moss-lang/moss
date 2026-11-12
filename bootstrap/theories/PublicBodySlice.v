@@ -1008,21 +1008,25 @@ Lemma add_locals_merge : forall binds C,
   A.c_merge (fold_left (fun C q => A.add_local C (fst q) (snd q) A.LLet) binds C) = A.c_merge C.
 Proof. induction binds as [|q r IH]; intros C; [reflexivity|cbn; rewrite IH; reflexivity]. Qed.
 
-Lemma record_args : forall F C pa a fs ftys xfs,
+Lemma record_args : forall F C exp fs ftys xfs (breaks : Prop),
+  (forall n y, In (n, Some y) fs -> A.Breaks W (A.fr_mod F) y -> breaks) ->
   Forall2 (fun ft xf => fst xf = fst ft /\
     exists n v vt, n = fst ft /\ In (n, v) fs /\
-      LegacyBodyJudgments.Ex W Prog F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
-      A.fits vt (snd ft)) ftys xfs ->
-  Forall2 (ArgSafe F C (A.Breaks W (A.fr_mod F) (AERec pa a fs))) (map snd xfs) (map snd ftys) /\
+      LegacyBodyJudgments.Ex W Prog F C (A.record_field_source n v)
+        (A.record_field_expected exp (snd ft)) (snd xf) vt /\
+      A.record_field_fits exp vt (snd ft)) ftys xfs ->
+  Forall2 (ArgSafe F C breaks) (map snd xfs) (map snd ftys) /\
   map fst xfs = map fst ftys.
 Proof.
-  intros F C pa a fs ftys xfs Fields. induction Fields as [|ft xf ftys xfs [Name [n [v [vt [-> [In' [D Fits]]]]]]] Rest [IHA IHN]];
+  intros F C exp fs ftys xfs breaks Break Fields.
+  induction Fields as [|ft xf ftys xfs [Name [n [v [vt [-> [In' [D Fits]]]]]]] Rest [IHA IHN]];
     [split; constructor|].
   split; [|cbn; rewrite Name, IHN; reflexivity].
   constructor; [|exact IHA].
-  exists (match v with Some y => y | None => AEPath [fst ft] None end), (Some (snd ft)), vt.
-  split; [exact D|]. split; [left; exact Fits|].
-  destruct v as [y|]; [intro B; eapply A.BkRec; [exact In'|exact B]|intro B; inversion B].
+  exists (A.record_field_source (fst ft) v), (A.record_field_expected exp (snd ft)), vt.
+  split; [exact D|]. split.
+  - left. destruct exp; cbn [A.record_field_fits] in Fits; [exact Fits|subst; apply fits_refl].
+  - destruct v as [y|]; [intro B; eapply Break; [exact In'|exact B]|intro B; inversion B].
 Qed.
 
 Lemma fields_combine : forall H d ftys ws,
@@ -1042,14 +1046,14 @@ Proof.
   apply fields_combine; exact T.
 Qed.
 
-Lemma record_eval : forall k, Below k ->
-  forall F C pa a fs ftys xfs d types H g st,
-  Forall2 (ArgSafe F C (A.Breaks W (A.fr_mod F) (AERec pa a fs))) (map snd xfs) (map snd ftys) ->
+Lemma record_eval : forall k, Below (Nat.pred k) ->
+  forall F C breaks ftys xfs d types H g st,
+  Forall2 (ArgSafe F C breaks) (map snd xfs) (map snd ftys) ->
   map fst xfs = map fst ftys -> Pre k F C d types H g st ->
-  Outcome F d H types (TRecord ftys) (A.Breaks W (A.fr_mod F) (AERec pa a fs)) (AR.O.I.eval k P d g st (ERecord xfs)).
+  Outcome F d H types (TRecord ftys) breaks (AR.O.I.eval k P d g st (ERecord xfs)).
 Proof.
-  intros [|k] Bel F C pa a fs ftys xfs d types H g st Args Names Pre0; [exact Logic.I|].
-  cbn [AR.O.I.eval]. pose proof (args_safe (S k) Bel k ltac:(lia) _ _ _ _ _ d types H g st Args (pre_lower Pre0)) as Out.
+  intros [|k] Bel F C breaks ftys xfs d types H g st Args Names Pre0; [exact Logic.I|].
+  cbn [AR.O.I.eval]. pose proof (args_safe k Bel k (le_n k) _ _ _ _ _ d types H g st Args (pre_lower Pre0)) as Out.
   match goal with |- context [AR.O.I.eval_arguments ?j ?V ?d0 ?g0 ?s0 ?es] =>
     change (AR.O.I.eval_arguments j V d0 g0 s0 es) with (AR.O.I.eval_arguments k P d g st (map snd xfs)) end.
   destruct (AR.O.I.eval_arguments k P d g st (map snd xfs)) as [[[ws g'] st']|r]; cbn in Out; hnf.
@@ -5638,7 +5642,7 @@ Proof.
       |F C exp e expected v actual Ret De Fits
       |F C exp Loop
       |F C exp pa a fs s bs xs pay ftys xfs R K Br F2 Pay PayEq Nd Len Fields
-      |F C exp o n ox ot rcd t Do Rcd Fld];
+      |F C exp o n ox ot rcd t Do Rcd Fld|F C exp fs ftys xfs Nd Len Shape Fields];
       intros d types H lg lst Pre0.
     + (* unit *) cbn [AR.O.I.eval]. eapply outcome_now; [exact Pre0|constructor].
     + (* this *) cbn [AR.O.I.eval]. pose proof Pre0 as [_ [[_ [Rcv _]] [L _]]].
@@ -5780,8 +5784,10 @@ Proof.
     + (* break *) cbn [AR.O.I.eval]. pose proof Pre0 as [_ [_ [L [S _]]]].
       split; [apply A.BkBreak|]. split; [exact Loop|]. exists H; repeat split; auto. apply extends_refl.
     + (* record *) subst pay. cbn [AR.O.I.eval].
-      destruct (record_args F C pa a fs ftys xfs Fields) as [Args Names].
-      pose proof (record_eval k Bel F C pa a fs ftys xfs d types H lg lst Args Names (pre_lower Pre0)) as Out.
+      destruct (record_args F C (Some (TRecord ftys)) fs ftys xfs (A.Breaks W (A.fr_mod F) (AERec pa a fs))
+        (fun n y Present Break => @A.BkRec W _ pa a fs n y Present Break) Fields) as [Args Names].
+      pose proof (record_eval k (fun j Le => Bel j ltac:(lia)) F C _ ftys xfs d types H lg lst
+        Args Names (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
@@ -5808,6 +5814,9 @@ Proof.
       destruct (field_lookup_typed W P H1 values _ n (ground d t) Fs) as [value [Found TV]];
         [rewrite slook_ground, Look; reflexivity|].
       rewrite Get, Found. exists H1; repeat split; auto. intros ? ? E; exact E.
+    + destruct (record_args F C exp fs ftys xfs (A.Breaks W (A.fr_mod F) (AEBareRecord fs))
+        (fun n y Present Break => @A.BkBareRecord W _ fs n y Present Break) Fields) as [Args Names].
+      exact (record_eval (S k) Bel F C _ ftys xfs d types H lg lst Args Names Pre0).
   (* ---------------- Blk ---------------- *)
   - destruct D as
       [F C y exp x t Dy

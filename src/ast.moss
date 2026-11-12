@@ -37,7 +37,7 @@ assume Std {
   fn k_ex_call(): Int { 11 }             # a=callee b=args run c=len
   fn k_ex_field(): Int { 12 }            # a=object b=name
   fn k_ex_method(): Int { 13 }           # a=receiver b=path c=args run d=len
-  fn k_ex_record(): Int { 14 }           # a=path b=run of ex_rfield c=len
+  fn k_ex_record(): Int { 14 }           # a=constructor or none b=run of ex_rfield c=len
   fn k_ex_rfield(): Int { 15 }           # a=name b=expr (none = shorthand)
   fn k_ex_if(): Int { 16 }      # a=cond b=then c=else
   fn k_ex_match(): Int { 17 }    # a=scrutinee b=run of arm c=len

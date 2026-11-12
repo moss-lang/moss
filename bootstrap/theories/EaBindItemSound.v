@@ -175,7 +175,7 @@ Proof.
       name params inputs outputs bodies] eqn:Ast;
       try solve [destruct rhs; discriminate].
     + destruct rhs as [syntax|]; [|discriminate].
-      destruct syntax as [| |target arguments| | | | | | | | | | | | |]; try discriminate.
+      destruct syntax as [| |target arguments| | | | | | | | | | | | | |]; try discriminate.
       eapply EaDirectBindSound.type_bind_post_sound; try eassumption.
       intros F' C' symbol ty state Kind. unfold valid. now rewrite body_context_set_ty by exact Kind.
     + destruct rhs as [syntax|]; [|discriminate].
@@ -184,7 +184,7 @@ Proof.
       apply valid_scope; [exact Valid|]. now apply body_context_provide, body_context_set_val, (proj1 Valid).
     + destruct recv; try solve [destruct rhs; discriminate].
       destruct rhs as [syntax|]; [|discriminate].
-      destruct syntax as [| |provider args| | | | | | | | | | | | |parameters ann syntax];
+      destruct syntax as [| |provider args| | | | | | | | | | | | |parameters ann syntax|];
         try discriminate.
       * destruct args; [discriminate|].
         eapply EaProviderBindSound.named_function_bind_post_sound; try eassumption.
@@ -197,7 +197,7 @@ Proof.
       * destruct syntax; discriminate.
       * eapply EaDirectBindSound.inline_functor_post_sound; try eassumption;
           intros; reflexivity.
-      * destruct syntax as [| |provider args| | | | | | | | | | | | |]; try discriminate.
+      * destruct syntax as [| |provider args| | | | | | | | | | | | | |]; try discriminate.
         destruct args; [discriminate|].
         destruct (resolve_sym W (fr_mod F) provider) as [g|] eqn:Read;
           cbn [mbind ret] in Run; [|discriminate].

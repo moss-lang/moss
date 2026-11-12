@@ -1768,7 +1768,7 @@ Proof.
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
                   |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
-                  |F C exp o n ox ot rec t Eo Rc Ft];
+                  |F C exp o n ox ot rec t Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
       intros Fc Ff Oe.
     + exact (tyok_unit W).
     + exact (proj2 Ff t Th).
@@ -1806,6 +1806,20 @@ Proof.
       { destruct Rc as [(s & xs & -> & Kt & Pay)| ->]; [|exact Ot].
         exact (payload_ok W _ _ _ Pay (proj2 (nom_ok_elim W _ _ Ot))). }
       destruct Ft as [ftys [-> S]]. exact (record_ok_elim W _ _ _ Rok (slook_in _ _ _ _ S)).
+    + destruct exp as [expected|].
+      { cbn [record_literal_shape] in Shape. destruct Shape as [-> _]. exact (Oe _ eq_refl). }
+      clear Nd Len Shape.
+      assert (Each : forall n t, In (n, t) ftys -> TyOk W t).
+      { induction Fields as [|[label field] [other value] fields values
+          [_ (n & syntax & actual & _ & _ & Child & Same)] Rest IH].
+        - intros ? ? [].
+        - intros n' t [Head|Tail]; [|now apply IH in Tail].
+          injection Head as _ <-. cbn [record_field_fits snd] in Same. subst actual.
+          exact (ex_ok _ _ _ _ _ _ Child Fc Ff (optok_none W)). }
+      split.
+      * apply record_formed. intros n t Present. exact (proj1 (Each n t Present)).
+      * intros g G. rewrite gens_record in G. apply in_flat_map in G as [[n t] [Present G]].
+        exact (proj2 (Each n t Present) g G).
   (* ---- Branch ---- *)
   - destruct D as [F C b exp x t Bb|F C y exp x t Nb Ey]; intros Fc Ff Oe.
     + destruct exp as [e|]; [exact (Oe e eq_refl)|exact (branch_ty_ok W b t (blke_ok _ _ _ _ _ _ Bb Fc Ff Oe))].

@@ -128,7 +128,7 @@ Proof.
   assert (ExprN : Expr n) by (apply Expressions; lia).
   destruct syntax as [| |path brackets|path brackets arguments|receiver field|receiver path arguments|
     path brackets fields|condition yes no|scrutinee arms|returned| |block|op operand|op left right|text|
-    params result body].
+    params result body|fields].
   - intros before [code t] after Run. injection Run as <- <- <-.
     split; [tauto|intros Valid _; split; [exact Valid|constructor]].
   - intros before [code t] after Run. cbn [ex] in Run.
@@ -153,5 +153,6 @@ Proof.
   - exact (operator_expression_sound n Below ExprN F C op left (Some right) expected).
   - eapply EaLiteralSound.literal_expression_sound; [apply CallerSection|exact Families].
   - intros before result' after Run. discriminate Run.
+  - now apply EaConstructSound.bare_record_expression_sound.
 Qed.
 End Expressions.

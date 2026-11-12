@@ -2137,7 +2137,7 @@ Fixpoint has_break_e (x : aexpr) : bool :=
   | AEField o _ => has_break_e o
   | AEMeth o _ args =>
       has_break_e o || (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
-  | AERec _ _ fs =>
+  | AERec _ _ fs | AEBareRecord fs =>
       (fix go (l : list (name * option aexpr)) :=
          match l with [] => false | (_, Some v) :: r => has_break_e v || go r | (_, None) :: r => go r end) fs
   | AEIf c t el => has_break_e c || has_break_b t ||
@@ -2176,7 +2176,7 @@ Fixpoint free_names_complete_e (x : aexpr) : list string :=
   | AECall _ _ args => flat_map free_names_complete_e args
   | AEField o _ => free_names_complete_e o
   | AEMeth o _ args => free_names_complete_e o +++ flat_map free_names_complete_e args
-  | AERec _ _ fs => flat_map (fun p => match snd p with
+  | AERec _ _ fs | AEBareRecord fs => flat_map (fun p => match snd p with
                     | Some v => free_names_complete_e v | None => [fst p] end) fs
   | AEIf c t el => free_names_complete_e c +++ free_names_complete_b t +++
                   match el with Some y => free_names_complete_e y | None => [] end
@@ -3542,6 +3542,7 @@ Fixpoint synth (fuel : nat) (c : cx) (e : env) (x : aexpr) (exp : option ety) {s
     | AEBlock b => let! (v, t, _) := synth_block f c e b exp in ret (v, opt_default t exp)
     | AEPath p a => synth_path f c e p a
     | AECall p a args => synth_call f c e p a args
+    | AEBareRecord _ => err mi "anonymous record literal in legacy elaborator"
     | AERec p a fs => synth_record f c e p a fs
     | AEField o n => synth_field f c e o n
     | AEMeth o p args => synth_method f c e o p args

@@ -358,6 +358,23 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
           ret (ETag s xs (ERecord xfs), TNom s xs)
       | _ => fail (qs W s ++ " does not have a record payload")
       end
+  | AEBareRecord fs =>
+      let* _ := match suniq_dup (map fst fs) with
+                | Some f => fail ("duplicate field `" ++ f ++ "`")
+                | None => ret tt end in
+      match exp with
+      | None =>
+          let* (ftys, xfs) := synth_fields n' F C fs in
+          ret (ERecord xfs, TRecord ftys)
+      | Some (TRecord ftys) =>
+          let* _ := match suniq_dup (map fst ftys) with
+                    | Some f => fail ("duplicate expected field `" ++ f ++ "`")
+                    | None => ret tt end in
+          let* _ := check (Nat.eqb (List.length fs) (List.length ftys)) "wrong number of record fields" in
+          let* xfs := mmap_fields n' F C fs ftys in
+          ret (ERecord xfs, TRecord ftys)
+      | Some _ => fail "a record literal needs a record type"
+      end
   | AEField o nm =>
       let* (ox, ot) := ex n' F C o None in
       let* rc := match ot with
@@ -384,6 +401,19 @@ with mmap_fields (n : nat) (F : frame) (C : cx) (fs : list (name * option aexpr)
           let* _ := check (fitsb vt ft) ("field `" ++ f ++ "` is " ++ qty W vt ++ ", expected " ++ qty W ft) in
           let* rest := mmap_fields n' F C fs r in
           ret ((f, x) :: rest)
+      end
+  end
+with synth_fields (n : nat) (F : frame) (C : cx) (fs : list (name * option aexpr)) {struct n}
+    : M (list (fld * ty) * list (fld * expr)) :=
+  match n with
+  | 0 => fail "too deep"
+  | S n' =>
+      match fs with
+      | [] => ret ([], [])
+      | (f, syntax) :: rest =>
+          let* (value, actual) := ex n' F C (record_field_source f syntax) None in
+          let* (types, values) := synth_fields n' F C rest in
+          ret ((f, actual) :: types, (f, value) :: values)
       end
   end
 with args (n : nat) (F : frame) (C : cx) (who : string) (pns : list name) (l : list aexpr) (ts : list ty) {struct n} : M (list expr) :=

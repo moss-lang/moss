@@ -56,6 +56,24 @@ Proof.
   exists target_needs, provider_needs. split; now apply functor_context_recorded.
 Qed.
 
+Local Ltac read_record_fields read_expression W P F C given ReadFields :=
+  assert (ReadFields : forall exp types values,
+        Forall2 (fun field value => fst value = fst field /\
+          exists n source actual, n = fst field /\ In (n, source) given /\
+            Ex W P F C (record_field_source n source)
+              (record_field_expected exp (snd field)) (snd value) actual /\ record_field_fits exp actual (snd field)) types values ->
+        exists plans, TypesRecordFields W F C given exp types plans /\ translate_record_fields F C plans = values /\
+          placements (record_fields_emission identity_slots F C plans)) by (
+    let read_fields := fresh "read_fields" in
+    fix read_fields 4; intros context_type types values Evidence;
+    destruct Evidence as [|[n expected] [other value] types values
+      [Same (name & source & actual & Field & Present & Typed & Fits)] Rest];
+    [ exists []; split; [constructor|split; [reflexivity|finish_placements]]
+    | cbn [fst snd] in *; subst other name;
+      destruct (read_expression _ _ _ _ _ _ Typed) as (plan & Value & <- & ?Placed);
+      destruct (read_fields _ _ _ Rest) as (plans & RestTyped & <- & ?Placed);
+      exists ((n, plan) :: plans); split; [econstructor; eassumption|split; [reflexivity|finish_placements]]]).
+
 Fixpoint read_expression F C source expected code t (D : Ex W P F C source expected code t) {struct D} :
   exists plan, TypesExpr W F C source expected plan t /\ translate_expr F C plan = code /\
     placements (expression_emission identity_slots F C plan)
@@ -145,7 +163,8 @@ Proof.
       |F C exp Loop
       |F C exp path brackets given tag readings arguments payload field_types field_code
          Resolve Kind Brackets Readings Payload Shape Distinct Count Fields
-      |F C exp object field value actual payload t Object Payload Field].
+      |F C exp object field value actual payload t Object Payload Field
+      |F C exp given field_types field_code Distinct Count Shape Fields].
     + exists PlanUnit. split; [constructor|split; [reflexivity|finish_placements]].
     + exists PlanThis. split; [now constructor|split; [reflexivity|finish_placements]].
     + exists (PlanLocal n). split; [eapply TypesLocal; eassumption|split; [reflexivity|finish_placements]].
@@ -195,25 +214,14 @@ Proof.
       exists (PlanReturn plan). split; [eapply TypesReturn; eassumption|split; [reflexivity|finish_placements]].
     + exists PlanBreak. split; [now constructor|split; [reflexivity|finish_placements]].
     + subst payload.
-      assert (ReadFields : forall types values,
-        Forall2 (fun field value => fst value = fst field /\
-          exists n source actual, n = fst field /\ In (n, source) given /\
-            Ex W P F C (match source with Some e => e | None => AEPath [n] None end)
-              (Some (snd field)) (snd value) actual /\ fits actual (snd field)) types values ->
-        exists plans, TypesRecordFields W F C given types plans /\ translate_record_fields F C plans = values /\
-          placements (record_fields_emission identity_slots F C plans)).
-      { fix read_fields 3. intros types values Evidence.
-        destruct Evidence as [|[n expected] [other value] types values
-          [Same (name & source & actual & Field & Present & Typed & Fits)] Rest].
-        - exists []. split; [constructor|split; [reflexivity|finish_placements]].
-        - cbn [fst snd] in *. subst other name.
-          destruct (read_expression _ _ _ _ _ _ Typed) as (plan & Value & <- & ?Placed).
-          destruct (read_fields _ _ Rest) as (plans & RestTyped & <- & ?Placed).
-          exists ((n, plan) :: plans). split; [econstructor; eassumption|split; [reflexivity|finish_placements]]. }
-      destruct (ReadFields _ _ Fields) as (plans & FieldsTyped & <- & ?Placed).
+      read_record_fields read_expression W P F C given ReadFields.
+      destruct (ReadFields (Some (TRecord field_types)) _ _ Fields) as (plans & FieldsTyped & <- & ?Placed).
       exists (PlanRecord tag arguments plans). split; [eapply TypesRecord; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_expression _ _ _ _ _ _ Object) as (plan & Typed & <- & ?Placed).
       exists (PlanField plan field). split; [eapply TypesField; eassumption|split; [reflexivity|finish_placements]].
+    + read_record_fields read_expression W P F C given ReadFields.
+      destruct (ReadFields exp _ _ Fields) as (plans & FieldsTyped & <- & ?Placed).
+      exists (PlanBareRecord plans). split; [eapply TypesBareRecord; eassumption|split; [reflexivity|finish_placements]].
   - destruct D as [F C|F C first rest ty tys code codes actual First Fits Rest].
     + exists []. split; [constructor|split; [reflexivity|finish_placements]].
     + destruct (read_expression _ _ _ _ _ _ First) as (plan & Typed & <- & ?Placed).
