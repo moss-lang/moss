@@ -10,7 +10,7 @@ edition = "2021"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [profile.release]
 # The driver is a thin shell around Binaryen and Wasmtime, so almost all of

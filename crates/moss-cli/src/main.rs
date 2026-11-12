@@ -289,6 +289,8 @@ fn installed_compiler() -> Option<PathBuf> {
 
 #[cfg(not(moss_embedded_compiler))]
 fn compiler_hash(root: &Path) -> Result<String> {
+    use std::fmt::Write as _;
+
     let mut files = Vec::new();
     collect_files(&root.join("src"), "moss", &mut files)?;
     collect_files(&root.join("lib"), "moss", &mut files)?;
@@ -301,7 +303,13 @@ fn compiler_hash(root: &Path) -> Result<String> {
         digest.update(fs::read(file)?);
         digest.update([0]);
     }
-    Ok(format!("{:x}\n", digest.finalize()))
+    let bytes = digest.finalize();
+    let mut hex = String::with_capacity(bytes.len() * 2 + 1);
+    for byte in bytes {
+        write!(&mut hex, "{byte:02x}")?;
+    }
+    hex.push('\n');
+    Ok(hex)
 }
 
 #[cfg(not(moss_embedded_compiler))]
