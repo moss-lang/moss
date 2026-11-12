@@ -77,7 +77,7 @@ Extract Constant AuditBase.WasmOps.decode => "PrimCache.memoize decode_operation
 Extraction NoInline BaseHost.decode_host_operation.
 Extract Constant BaseHost.decode_host => "PrimCache.memoize_host decode_host_operation".
 Extraction Inline BaseFacts.DeferredBaseCall.result_at_site.
-Extraction Blacklist String List Char Bool.
+Extraction Blacklist String List Char Bool Int.
 Separate Extraction AuditBase.BaseCall.call init_memories run_prim_fast
   parse_moss Dump.dump_file print_sx SnapshotLoader.load_from
   EaMain.elaborate

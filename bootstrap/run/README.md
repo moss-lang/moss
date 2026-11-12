@@ -8,6 +8,12 @@ the test suite holds the compiler to it. It runs one pipeline:
    imports through the driver's file reads and returns the parsed source bundle.
    `SnapshotLoader.load_from_sound` proves that a successful load satisfies
    `Audit.Loader.Bundled` for those reads.
+   [MossGrammar.vy](../theories/MossGrammar.vy) defines the token grammar.
+   Dune runs Menhir in Rocq mode with completeness checking enabled.
+   `Audit.Syntax.File` uses the generated parse-tree relation, and the
+   reference executable uses the generated parser. `FrontEnd.v` and
+   `FrontEndComplete.v` connect the lexer and whole-file parser to that
+   specification.
 2. **Elaborator**: `EaMain.elaborate` (`theories/Ea*.v`) builds an
    `AuditBase.Semantics.program` from the bundle, or rejects it.
    `BootstrapVerified.elaborate_sound` proves that a successful build
@@ -48,7 +54,9 @@ and is absent from executable extraction.
 ## Trust
 
 Audit.v defines the generic language semantics, and AuditBase.v supplies
-the concrete Base platform. Both files contain definitions without proofs.
+the concrete Base platform. The token grammar, its semantic actions and
+the definitions in Surface.v are part of the source specification.
+Rocq checks Menhir's parser certificate during the bootstrap build.
 Steps 3 and 4 use the interpreter and passes proved against these definitions.
 `BaseHost.primitive_laws` verifies the extracted host's scalar, WASI and
 heap operations against the Base contract, and `BaseHost.default_compatible`

@@ -10,8 +10,8 @@
 #   global context.
 # - Nothing is Admitted, and Parameters and Axioms are declared only inside
 #   module types (public and component obligations, never assumptions).
-# - Audit.v and AuditBase.v hold no proofs: their helper lemmas live
-#   in AuditFacts.v and BaseFacts.v.
+# - The audit specifications and the grammar's semantic actions hold no
+#   proofs. The generated parser and the other theories provide them.
 set -euo pipefail
 cd "$(dirname "$0")"
 fail() { echo "check.sh: $*" >&2; exit 1; }
@@ -42,7 +42,7 @@ open=$(grep -vx 'Closed under the global context' "$build_dir/Closed.log" || tru
 [ -z "$open" ] || fail "a theorem of assumptions/Closed.v is not closed: $open"
 
 if grep -snE '\b(Admitted|admit)\.' theories/*.v run/*.v; then fail "Admitted"; fi
-if grep -nE '\b(Proof|Qed|Defined|Admitted)\.' theories/Audit.v theories/AuditBase.v; then
+if grep -nE '\b(Proof|Qed|Defined|Admitted)\.' theories/Audit.v theories/AuditBase.v theories/Surface.v theories/MossActions.v theories/MossGrammar.vy; then
   fail "trusted definitions contain a proof; use AuditFacts.v or BaseFacts.v for lemmas"
 fi
 if sed '/^[[:space:]]*Module Type /,/^[[:space:]]*End /d' theories/*.v | grep -E '^\s*(Parameter|Axiom)\b'; then

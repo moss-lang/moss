@@ -1,11 +1,9 @@
-(* ======================================================================== *)
-(* FrontEnd.v — Parse.v's lexer and parser against ExecutionModel.Syntax.Derives     *)
-(* (Part VI's FRONT_END): soundness and completeness.                       *)
-(* ======================================================================== *)
+(* The source lexer and Menhir parser against Audit.Syntax.Derives. *)
 
 From Stdlib Require Import String Ascii List Bool Arith Lia.
 From Stdlib Require Import Strings.Byte.
 From NM Require Import ExecutionModel Parse.
+From NM Require MossGrammar MossActions.
 Import ListNotations.
 Import ExecutionModel.Input ExecutionModel.Syntax.
 Local Open Scope string_scope.
@@ -13,10 +11,6 @@ Local Open Scope string_scope.
 (* ######################################################################## *)
 (* Basics                                                                    *)
 (* ######################################################################## *)
-
-Lemma pbind_ok {A B} (r : pr A) (k : A -> list token -> pr B) v rest :
-  pbind r k = POk v rest -> exists a ts', r = POk a ts' /\ k a ts' = POk v rest.
-Proof. destruct r; simpl; [eauto | discriminate]. Qed.
 
 (* Kinds: equality is decidable, by `token_kind_eqb`. *)
 Lemma token_kind_index_inj a b : token_kind_index a = token_kind_index b -> a = b.
@@ -42,658 +36,6 @@ Lemma token_kind_eqb_neq a b : token_kind_eqb a b = false <-> a <> b.
 Proof. rewrite <- token_kind_eqb_eq. destruct (token_kind_eqb a b); intuition discriminate. Qed.
 Lemma token_kind_eqb_spec a b : reflect (a = b) (token_kind_eqb a b).
 Proof. apply iff_reflect. symmetry. apply token_kind_eqb_eq. Qed.
-
-Lemma at_true k ts : at_ k ts = true -> kind ts = k.
-Proof. unfold at_. apply token_kind_eqb_eq. Qed.
-Lemma at_false k ts : at_ k ts = false -> kind ts <> k.
-Proof. unfold at_. intros H E. apply token_kind_eqb_neq in H. auto. Qed.
-Lemma at_any_true ks ts : at_any ks ts = true -> In (kind ts) ks.
-Proof.
-  unfold at_any. intro H. apply existsb_exists in H as (k & Hin & E).
-  apply token_kind_eqb_eq in E. subst. auto.
-Qed.
-Lemma at_any_false ks ts : at_any ks ts = false -> ~ In (kind ts) ks.
-Proof.
-  unfold at_any. intros H Hin. assert (existsb (token_kind_eqb (kind ts)) ks = true).
-  { apply existsb_exists. exists (kind ts). split; auto. apply token_kind_eqb_refl. }
-  congruence.
-Qed.
-Lemma mem_In s l : mem s l = true -> In s l.
-Proof. unfold mem. intro H. apply existsb_exists in H as (k & Hin & E). apply String.eqb_eq in E. subst. auto. Qed.
-Lemma In_mem s l : In s l -> mem s l = true.
-Proof. unfold mem. intro H. apply existsb_exists. exists s. split; auto. apply String.eqb_refl. Qed.
-
-Lemma mem_false s l : mem s l = false -> ~ In s l.
-Proof. intros H Hin. apply In_mem in Hin. congruence. Qed.
-
-Lemma Tk_intro k ts : kind ts = k -> Tk k ts (advance ts).
-Proof. split; auto. Qed.
-
-Lemma expect_ok k ts t ts' : expect k ts = POk t ts' -> Tk k ts ts' /\ t = peek ts.
-Proof.
-  unfold expect. destruct (at_ k ts) eqn:E; [|discriminate].
-  intro H. injection H as <- <-. apply at_true in E. split; [split|]; auto.
-Qed.
-
-Lemma expect_name_ok ts x ts' : expect_name ts = POk x ts' -> TkName ts x ts'.
-Proof.
-  unfold expect_name. intro H. apply pbind_ok in H as (t & ts1 & H1 & H2).
-  apply expect_ok in H1 as [[E1 E2] ->]. injection H2 as <- <-. repeat split; auto.
-Qed.
-
-Arguments at_ : simpl never.
-Arguments at_any : simpl never.
-Arguments expect : simpl never.
-Arguments expect_name : simpl never.
-Arguments eat : simpl never.
-Arguments err : simpl never.
-Arguments mixed : simpl never.
-Arguments kind : simpl never.
-Arguments kind_at : simpl never.
-Arguments advance : simpl never.
-Arguments peek : simpl never.
-Arguments at_lambda : simpl never.
-Arguments parse_bind_target : simpl never.
-Arguments binop : simpl never.
-Arguments binop_in : simpl never.
-Arguments mem : simpl never.
-
-(* Unpack a successful parser run. *)
-Ltac crush :=
-  repeat match goal with
-  | H : context [eat ?k ?ts] |- _ =>
-      let E := fresh "E" in unfold eat in H; destruct (at_ k ts) eqn:E; cbv beta iota zeta in H
-  | H : match ?o with Some _ => _ | None => _ end = POk _ _ |- _ => let E := fresh "E" in destruct o eqn:E
-  | H : match ?o with [] => _ | _ :: _ => _ end = POk _ _ |- _ => let E := fresh "E" in destruct o eqn:E
-  | H : pbind _ _ = POk _ _ |- _ =>
-      let a := fresh "a" in let t := fresh "ts" in let H1 := fresh "H" in
-      apply pbind_ok in H; destruct H as (a & t & H1 & H)
-  | H : POk _ _ = POk _ _ |- _ => injection H; clear H; intros; subst
-  | H : PErr _ _ = POk _ _ |- _ => discriminate H
-  | H : err _ _ = POk _ _ |- _ => discriminate H
-  | H : fuel_err _ = POk _ _ |- _ => discriminate H
-  | H : mixed _ _ = POk _ _ |- _ => discriminate H
-  | H : expect _ _ = POk _ _ |- _ =>
-      let H1 := fresh "Tk" in apply expect_ok in H; destruct H as [H1 H]; subst
-  | H : expect_name _ = POk _ _ |- _ => apply expect_name_ok in H
-  | H : at_ _ _ = true |- _ => apply at_true in H
-  | H : at_ _ _ = false |- _ => apply at_false in H
-  | H : at_any _ _ = true |- _ => apply at_any_true in H
-  | H : at_any _ _ = false |- _ => apply at_any_false in H
-  | H : mem _ _ = true |- _ => apply mem_In in H
-  | H : mem _ _ = false |- _ => apply mem_false in H
-  | H : (if ?b then _ else _) = POk _ _ |- _ => let E := fresh "E" in destruct b eqn:E
-  | H : context [match ?p with (_, _) => _ end] |- _ => is_var p; destruct p; cbv beta iota in H
-  | H : (_ && _)%bool = true |- _ => apply andb_prop in H; destruct H
-  | H : (_ && _)%bool = false |- _ => apply andb_false_iff in H; destruct H
-  | H : (_ || _)%bool = true |- _ => apply orb_prop in H; destruct H
-  | H : (_ || _)%bool = false |- _ => apply orb_false_iff in H; destruct H
-  | H : String.eqb _ _ = true |- _ => apply String.eqb_eq in H
-  | H : String.eqb _ _ = false |- _ => apply String.eqb_neq in H
-  | H : token_kind_eqb _ _ = true |- _ => apply token_kind_eqb_eq in H
-  | H : token_kind_eqb _ _ = false |- _ => apply token_kind_eqb_neq in H
-  | H : negb _ = true |- _ => apply negb_true_iff in H
-  | H : negb _ = false |- _ => apply negb_false_iff in H
-  end.
-
-Global Hint Resolve Tk_intro : fe.
-Global Hint Unfold Tk TkName : fe.
-
-(* ######################################################################## *)
-(* Soundness: a successful parse is a derivation                             *)
-(* ######################################################################## *)
-
-Lemma comma_list_sound {A} (X : list token -> A -> list token -> Prop) (item : list token -> pr A) closers :
-  (forall ts v rest, item ts = POk v rest -> X ts v rest) ->
-  forall n ts xs rest, comma_list n item closers ts = POk xs rest -> CommaList X closers ts xs rest.
-Proof.
-  intros Hi. induction n as [|n IH]; intros ts xs rest H; simpl in H; crush.
-  all: first [ now apply CLNil | solve [eapply CLCons; eauto with fe] | eapply CLLast; eauto ].
-Qed.
-
-Lemma kind_at1 ts : kind_at 1 ts = kind (advance ts).
-Proof. destruct ts as [|t [|t2 [|t3 r]]]; reflexivity. Qed.
-
-Global Hint Constructors CommaList Path Head Spec_ App AppBinding Type_ Members TypeAtom RecordType
-  TypeField OptType Pattern RecordPattern PatField : fe.
-Global Hint Resolve or_introl or_intror conj : fe.
-
-Lemma path_rest_sound : forall n acc ts p rest, path_rest n acc ts = POk p rest ->
-  forall ts0 x acc', acc = x :: acc' -> TkName ts0 x ts -> exists q, p = (rev acc' ++ q)%list /\ Path ts0 q rest.
-Proof.
-  induction n as [|n IH]; intros acc ts p rest H ts0 x acc' -> Hx; simpl in H; crush.
-  - edestruct IH as (q & -> & Hq); [eassumption | reflexivity | eassumption |].
-    exists (x :: q). split; [simpl; rewrite <- app_assoc; reflexivity|].
-    eapply PathMore; eauto with fe.
-  - exists [x]. split; [unfold rev'; rewrite <- rev_alt; reflexivity|]. eapply PathOne; eauto.
-Qed.
-
-Lemma parse_path_sound n ts p rest : parse_path n ts = POk p rest -> Path ts p rest.
-Proof.
-  unfold parse_path. intro H. crush.
-  edestruct path_rest_sound as (q & -> & Hq); [eassumption | reflexivity | eassumption | exact Hq].
-Qed.
-
-Lemma path_first ts p rest : Path ts p rest ->
-  exists q, p = tx (peek ts) :: q /\ (q = [] -> kind (advance ts) <> COLON_COLON).
-Proof.
-  intro H. destruct H as [ts x ts1 [E1 [E2 E3]] Hk | ts x ts1 ts2 p ts3 [E1 [E2 E3]] [E4 E5] Hp].
-  - exists []. subst. split; auto.
-  - inversion Hp; subst; eexists; split; [reflexivity| | reflexivity|]; discriminate.
-Qed.
-
-Lemma spec_sound : forall n,
-  (forall ts v rest, parse_spec n ts = POk v rest -> Spec_ ts v rest) /\
-  (forall ts v rest, parse_app_opt n ts = POk v rest -> App ts v rest) /\
-  (forall ts v rest, parse_binding n ts = POk v rest -> AppBinding ts v rest).
-Proof.
-  induction n as [|n (IH1 & IH2 & IH3)]; [repeat split; intros; discriminate|].
-  repeat split; intros ts v rest H; simpl in H; crush;
-    repeat match goal with H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H end;
-    try match goal with H : parse_app_opt _ _ = POk _ _ |- _ => apply IH2 in H end;
-    try match goal with H : parse_spec _ _ = POk _ _ |- _ => apply IH1 in H end;
-    try match goal with H : comma_list _ _ _ _ = POk _ _ |- _ => apply (comma_list_sound AppBinding) in H; [|exact IH3] end;
-    eauto 6 with fe.
-Qed.
-
-Lemma app_sound n ts v rest : parse_app_opt n ts = POk v rest -> App ts v rest.
-Proof. apply spec_sound. Qed.
-Lemma spec1_sound n ts v rest : parse_spec n ts = POk v rest -> Spec_ ts v rest.
-Proof. apply spec_sound. Qed.
-
-Lemma parse_type_ref_sound n ts t rest : parse_type_ref n ts = POk t rest -> TypeRef ts t rest.
-Proof.
-  unfold parse_type_ref, TypeRef. intro H. crush.
-  apply parse_path_sound in H0. apply app_sound in H1. exists a, a0, ts0. auto.
-Qed.
-
-Lemma parse_assume_item_sound n ts it rest : parse_assume_item n ts = POk it rest -> AssumeItem ts it rest.
-Proof.
-  unfold parse_assume_item, eq_side_err. intro H. crush; apply parse_path_sound in H0.
-  all: try solve [eapply (AssumeHead _ (_, Some _)); simpl; eauto with fe].
-  all: try solve [eapply (AssumeHead _ (_, None)); simpl; eauto with fe].
-  all: match goal with Ha : parse_app_opt _ ?t0 = POk ?ap ?t1, Hr : parse_type_ref _ ?t2 = POk _ _,
-                       Hk : Tk EQUAL ?t1 ?t2, Hp : Path _ ?pp ?t0 |- _ =>
-         apply parse_type_ref_sound in Hr; apply app_sound in Ha; apply AssumeEq;
-         exists t1, t2; simpl; split; [exists pp, ap, t0; auto|]; split; [exact Hk|exact Hr] end.
-Qed.
-
-Lemma parse_ctx_item_sound n ts it rest : parse_ctx_item n ts = POk it rest -> CtxItem ts it rest.
-Proof.
-  unfold parse_ctx_item, eq_side_err. intro H. crush.
-  all: try solve [apply CtxSpec; [eapply spec1_sound; eassumption|auto]].
-  destruct a as [[p|] [d|] a]; crush.
-  match goal with Hr : parse_type_ref _ _ = POk _ _ |- _ => apply parse_type_ref_sound in Hr; rename Hr into Hr0 end.
-  apply spec1_sound in H0.
-  inversion H0 as [? ? ? ? ? ? Hh Ha]; subst.
-  inversion Hh as [? ? ? Hp Hk| |]; subst.
-  apply CtxEq. exists ts0, (advance ts0). split; [eexists _, a, _; split; [exact Hp|split; [exact Ha|reflexivity]]|].
-  split; [split; auto|exact Hr0].
-Qed.
-
-Ltac use_sound :=
-  repeat match goal with
-  | H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H
-  | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
-  | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
-  | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
-  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
-  end.
-
-(* Apply the induction hypotheses (named IH1, IH2, ...) to every parser run. *)
-Ltac feed :=
-  repeat match goal with
-  | H : _ = POk _ _ |- _ =>
-      match goal with IH : context [POk] |- _ => apply IH in H end
-  | H : exists _, _ |- _ => destruct H
-  | H : _ /\ _ |- _ => destruct H
-  end.
-
-Ltac feed_lists :=
-  repeat match goal with
-  | H : comma_list _ _ _ _ = POk _ _ |- _ =>
-      eapply comma_list_sound in H;
-      [| let ts := fresh in let v := fresh in let r := fresh in let Hi := fresh in
-         intros ts v r Hi;
-         try (match goal with IH : context [POk] |- _ => apply IH in Hi end);
-         exact Hi ]
-  end.
-
-Definition MembersAfter (ts : list token) (ms : list aty) (rest : list token) : Prop :=
-  forall ts0 m, TypeAtom ts0 m ts -> Members ts0 (m :: ms) rest.
-
-Lemma type_sound : forall n,
-  (forall ts v rest, parse_type n ts = POk v rest -> Type_ ts v rest) /\
-  (forall ts v rest, union_rest n ts = POk v rest -> MembersAfter ts v rest) /\
-  (forall ts v rest, parse_type_atom n ts = POk v rest -> TypeAtom ts v rest) /\
-  (forall ts v rest, parse_record_type n ts = POk v rest -> RecordType ts v rest) /\
-  (forall ts v rest, type_field n ts = POk v rest -> TypeField ts v rest).
-Proof.
-  induction n as [|n (IH1 & IH2 & IH3 & IH4 & IH5)]; [repeat split; intros; discriminate|].
-  repeat split.
-  - intros ts v rest H. simpl in H. unfold eat, at_type_atom in H.
-    destruct (at_ PIPE ts) eqn:Ep; simpl in H; crush; feed.
-    + apply TyNever; auto with fe.
-    + match goal with H : MembersAfter _ _ _, Ha : TypeAtom _ _ _ |- _ => apply H in Ha end.
-      match goal with Hm : Members ?t (?m :: ?ms) _ |- _ => apply (TyMembers ts t (m :: ms)) end;
-        unfold OptTk; auto with fe.
-    + match goal with H : MembersAfter _ _ _, Ha : TypeAtom _ _ _ |- _ => apply H in Ha end.
-      match goal with Hm : Members ?t (?m :: ?ms) _ |- _ => apply (TyMembers ts t (m :: ms)) end;
-        unfold OptTk; auto with fe.
-    + match goal with H : MembersAfter _ _ _, Ha : TypeAtom _ _ _ |- _ => apply H in Ha end.
-      match goal with Hm : Members ?t (?m :: ?ms) _ |- _ => apply (TyMembers ts t (m :: ms)) end;
-        unfold OptTk; auto with fe.
-    + match goal with H : MembersAfter _ _ _, Ha : TypeAtom _ _ _ |- _ => apply H in Ha end.
-      match goal with Hm : Members ?t (?m :: ?ms) _ |- _ => apply (TyMembers ts t (m :: ms)) end;
-        unfold OptTk; auto with fe.
-  - intros ts v rest H ts0 m Hm. simpl in H. crush; feed.
-    all: unfold MembersAfter in *.
-    + eapply MemMore; eauto with fe.
-    + apply MemOne; auto.
-  - intros ts v rest H. simpl in H. crush; use_sound; feed; feed_lists; eauto with fe.
-    all: try solve [eapply TATuple; eauto with fe].
-  - intros ts v rest H. simpl in H. crush; feed_lists; eauto with fe.
-  - intros ts v rest H. simpl in H. crush; feed; eauto with fe.
-Qed.
-
-Lemma type1_sound n ts v rest : parse_type n ts = POk v rest -> Type_ ts v rest.
-Proof. apply type_sound. Qed.
-Lemma record_type_sound n ts v rest : parse_record_type n ts = POk v rest -> RecordType ts v rest.
-Proof. apply type_sound. Qed.
-
-Ltac use_sound ::=
-  repeat match goal with
-  | H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H
-  | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
-  | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
-  | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
-  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
-  | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
-  | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
-  end.
-
-Lemma opt_type_sound n ts v rest : parse_opt_type n ts = POk v rest -> OptType ts v rest.
-Proof.
-  unfold parse_opt_type, eat. intro H. destruct (at_ COLON ts) eqn:E; crush; use_sound; eauto with fe.
-Qed.
-
-Definition RecPatAfter (p : option path) (ts : list token) (v : apat) (rest : list token) : Prop :=
-  exists fs, v = APRec p fs /\ RecordPattern ts fs rest.
-
-Lemma pattern_sound : forall n,
-  (forall ts v rest, parse_pattern n ts = POk v rest -> Pattern ts v rest) /\
-  (forall p ts v rest, parse_record_pattern n p ts = POk v rest -> RecPatAfter p ts v rest) /\
-  (forall ts v rest, pat_field n ts = POk v rest -> PatField ts v rest).
-Proof.
-  induction n as [|n (IH1 & IH2 & IH3)]; [repeat split; intros; discriminate|].
-  repeat split.
-  - intros ts v rest H. simpl in H. crush; use_sound; feed; feed_lists; unfold RecPatAfter in *; feed; subst.
-    all: try solve [eauto with fe].
-    all: first
-      [ apply PatWild; split; auto
-      | apply PatPath; auto; simpl; intros [K|[K|[]]]; auto ].
-  - intros p ts v rest H. simpl in H. crush; feed_lists; unfold RecPatAfter; eauto with fe.
-  - intros ts v rest H. simpl in H. crush; feed; eauto with fe.
-Qed.
-
-Lemma pattern1_sound n ts v rest : parse_pattern n ts = POk v rest -> Pattern ts v rest.
-Proof. apply pattern_sound. Qed.
-
-Ltac use_sound ::=
-  repeat match goal with
-  | H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H
-  | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
-  | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
-  | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
-  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
-  | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
-  | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
-  | H : parse_opt_type _ _ = POk _ _ |- _ => apply opt_type_sound in H
-  | H : parse_pattern _ _ = POk _ _ |- _ => apply pattern1_sound in H
-  end.
-Global Hint Unfold OptTk : fe.
-
-(* ===================== Expressions ======================================== *)
-
-Global Hint Constructors LeftChain Expr Cond Arms ArmBody Operators Operand Additive Term Unary
-  Suffixes Primary RecField Lambda Block Stmts Bind Binding : fe.
-
-Lemma TkName_intro ts ts' x : Tk NAME ts ts' -> tx (peek ts) = x -> TkName ts x ts'.
-Proof. intros [E1 E2] E3. repeat split; auto. Qed.
-Lemma OptTk_eat k ts : OptTk k ts (snd (eat k ts)).
-Proof.
-  unfold OptTk, eat. destruct (at_ k ts) eqn:E; simpl.
-  - left. apply at_true in E. split; auto.
-  - right. apply at_false in E. auto.
-Qed.
-Lemma TkName_self ts : kind ts = NAME -> TkName ts (tx (peek ts)) (advance ts).
-Proof. intro. repeat split; auto. Qed.
-Global Hint Resolve TkName_intro OptTk_eat TkName_self : fe.
-
-Lemma unary_op_some k op : unary_op k = Some op -> (k = HYPHEN /\ op = "-") \/ (k = EXCLAM /\ op = "!").
-Proof. unfold unary_op. destruct k; intro H; inversion H; auto. Qed.
-Lemma unary_op_none k : unary_op k = None -> k <> HYPHEN /\ k <> EXCLAM.
-Proof. unfold unary_op. destruct k; intro H; try discriminate H; split; discriminate. Qed.
-
-Lemma binop_in_false l ts : (forall o, binop ts = Some o -> ~ In o l) -> binop_in l ts = false.
-Proof.
-  unfold binop_in. destruct (binop ts) as [o|]; auto. intro H.
-  destruct (mem o l) eqn:E; auto. apply mem_In in E. exfalso. apply (H o); auto.
-Qed.
-Ltac not_binop :=
-  apply binop_in_false; intros ? ?;
-  repeat match goal with H1 : binop ?t = Some _, H2 : binop ?t = Some _ |- _ =>
-           rewrite H1 in H2; injection H2; clear H2; intro; subst end;
-  first [ assumption | congruence | simpl; intuition congruence ].
-
-Lemma binop_in_true l ts : binop_in l ts = true -> exists o, binop ts = Some o /\ In o l.
-Proof. unfold binop_in. destruct (binop ts) as [o|]; [|discriminate]. intro H. apply mem_In in H. eauto. Qed.
-
-Lemma binop_in_none l ts : binop ts = None -> binop_in l ts = false.
-Proof. unfold binop_in. intros ->. reflexivity. Qed.
-Lemma binop_in_some l ts op : binop ts = Some op -> binop_in l ts = mem op l.
-Proof. unfold binop_in. intros ->. reflexivity. Qed.
-
-(* What the parser's left-factored functions establish, given the operand
-   they were handed. *)
-Definition TermRest (nr : bool) (first : aexpr) (ts : list token) (e : aexpr) (rest : list token) : Prop :=
-  exists e1 ts2, LeftChain (Unary nr) ["*"] first ts e1 ts2 /\
-    ((binop_in FRACTION ts2 = false /\ e = e1 /\ rest = ts2) \/
-     (exists op r, binop ts2 = Some op /\ In op FRACTION /\ Unary nr (advance ts2) r rest /\
-                   binop_in ("*" :: FRACTION) rest = false /\ e = AEBinary op e1 r)).
-
-Definition MulAfter nr e (last : option string) ts (v : aexpr * option string) rest : Prop :=
-  LeftChain (Unary nr) ["*"] e ts (fst v) rest /\
-  ((rest = ts /\ fst v = e /\ snd v = last) \/ snd v = Some "*").
-Definition TermAfter nr first ts (v : aexpr * option string) rest : Prop :=
-  TermRest nr first ts (fst v) rest /\ (snd v = None -> rest = ts /\ fst v = first).
-Definition AddAfter nr e (last : option string) ts (v : aexpr * option string) rest : Prop :=
-  LeftChain (Term nr) ADDITIVE e ts (fst v) rest /\
-  ((rest = ts /\ fst v = e /\ snd v = last) \/ snd v <> None).
-Definition OperandAfter nr first ts (v : aexpr * option string) rest : Prop :=
-  (exists op r, binop ts = Some op /\ In op SHIFT /\ Unary nr (advance ts) r rest /\ fst v = AEBinary op first r) \/
-  (exists t ts1, TermRest nr first ts t ts1 /\ LeftChain (Term nr) ADDITIVE t ts1 (fst v) rest /\
-                 binop_in SHIFT rest = false).
-Definition StmtsOk ts (v : list astmt * option aexpr) rest : Prop := Stmts ts (fst v) (snd v) rest.
-
-Lemma term_of_rest nr ts u ts1 e rest : Unary nr ts u ts1 -> TermRest nr u ts1 e rest -> Term nr ts e rest.
-Proof.
-  intros Hu (e1 & ts2 & Hc & [(Hf & -> & ->) | (op & r & Ho & Hin & Hr & Hn & ->)]).
-  - eapply TermProduct; eauto.
-  - eapply TermQuotient; eauto.
-Qed.
-
-Lemma operand_of_after nr ts u ts1 v rest : Unary nr ts u ts1 -> OperandAfter nr u ts1 v rest ->
-  Operand nr ts (fst v) rest.
-Proof.
-  intros Hu [(op & r & Ho & Hin & Hr & ->) | (t & ts2 & Ht & Hc & Hs)].
-  - eapply OperandShift; eauto.
-  - apply OperandAdditive; auto. eapply AdditiveG; [eapply term_of_rest|]; eauto.
-Qed.
-
-Lemma operand_unary nr ts u ts1 : Unary nr ts u ts1 -> binop ts1 = None -> Operand nr ts u ts1.
-Proof.
-  intros Hu Hb. apply OperandAdditive; [|apply binop_in_none; auto].
-  eapply AdditiveG; [eapply TermProduct|]; eauto; try apply ChainEnd; apply binop_in_none; auto.
-Qed.
-
-Ltac grind := crush; use_sound; feed; feed_lists; subst;
-  repeat match goal with
-  | H : unary_op _ = Some _ |- _ => apply unary_op_some in H; destruct H as [[? ?]|[? ?]]; subst
-  | H : binop ?ts = None |- context [binop_in _ ?ts] => rewrite (binop_in_none _ _ H)
-  | H : binop ?ts = Some _ |- context [binop_in _ ?ts] => rewrite (binop_in_some _ _ _ H)
-  end.
-
-Ltac list_with X :=
-  match goal with
-  | H : comma_list _ _ _ _ = POk _ _ |- _ =>
-      apply (comma_list_sound X) in H;
-      [| let ts := fresh in let v := fresh in let r := fresh in let Hi := fresh in
-         intros ts v r Hi; solve [crush; use_sound; feed; subst; eauto 6 with fe] ]
-  end.
-
-Global Hint Constructors BindForm BindFormField : fe.
-
-Lemma bind_form_sound : forall n,
-  (forall ts v rest, parse_bind_form n ts = POk v rest -> BindForm ts v rest) /\
-  (forall ts v rest, parse_bind_field n ts = POk v rest -> BindFormField ts v rest).
-Proof.
-  induction n as [|n [Form Field]]; [split; intros; discriminate|].
-  - split; intros ts v rest H; simpl in H; crush;
-      try list_with BindFormField; try list_with BindForm;
-      grind; eauto with fe.
-Qed.
-
-Lemma bind_form1_sound n ts v rest : parse_bind_form n ts = POk v rest -> BindForm ts v rest.
-Proof. apply bind_form_sound. Qed.
-Local Hint Resolve bind_form1_sound : fe.
-
-Global Hint Constructors BindTarget : fe.
-
-Lemma bind_target_sound n ts v rest : parse_bind_target n ts = POk v rest -> BindTarget ts v rest.
-Proof.
-  unfold parse_bind_target. intro H. crush; try list_with BindForm; grind.
-  all: eauto with fe.
-Qed.
-
-Ltac read_bind_form :=
-  repeat match goal with
-  | H : parse_bind_form ?n _ = POk _ _ |- _ => apply (proj1 (bind_form_sound n)) in H
-  | H : parse_bind_target _ _ = POk _ _ |- _ => apply bind_target_sound in H
-  | H : negb _ = false |- _ => apply Bool.negb_false_iff in H
-  end.
-
-Lemma expr_sound : forall n,
-  (forall nr ts v rest, parse_expr n nr ts = POk v rest -> Expr nr ts v rest) /\
-  (forall ts v rest, parse_if n ts = POk v rest -> Cond ts v rest) /\
-  (forall ts v rest, parse_arms n ts = POk v rest -> Arms ts v rest) /\
-  (forall nr ts v rest, parse_operators n nr ts = POk v rest -> Operators nr ts v rest) /\
-  (forall nr op e ts v rest, bit_loop n nr op e ts = POk v rest -> LeftChain (Unary nr) [op] e ts v rest) /\
-  (forall nr first ts v rest, parse_operand n nr first ts = POk v rest -> OperandAfter nr first ts v rest) /\
-  (forall nr e last ts v rest, add_loop n nr e last ts = POk v rest -> AddAfter nr e last ts v rest) /\
-  (forall nr first ts v rest, parse_term n nr first ts = POk v rest -> TermAfter nr first ts v rest) /\
-  (forall nr e last ts v rest, mul_loop n nr e last ts = POk v rest -> MulAfter nr e last ts v rest) /\
-  (forall nr ts v rest, parse_unary n nr ts = POk v rest -> Unary nr ts v rest) /\
-  (forall nr ts v rest, parse_postfix n nr ts = POk v rest -> Unary nr ts v rest) /\
-  (forall e ts v rest, postfix_loop n e ts = POk v rest -> Suffixes e ts v rest) /\
-  (forall ts v rest, parse_lambda n ts = POk v rest -> Lambda ts v rest) /\
-  (forall nr ts v rest, parse_primary n nr ts = POk v rest -> Primary nr ts v rest) /\
-  (forall ts v rest, parse_block n ts = POk v rest -> Block ts v rest) /\
-  (forall ts v rest, block_loop n ts = POk v rest -> StmtsOk ts v rest) /\
-  (forall ts v rest, parse_bind n ts = POk v rest -> Bind ts v rest).
-Proof.
-  induction n as [|n (IH1 & IH2 & IH3 & IH4 & IH5 & IH6 & IH7 & IH8 & IH9 & IH10 & IH11 & IH12 & IH13
-                      & IH14 & IH15 & IH16 & IH17)];
-    [repeat (match goal with |- _ /\ _ => split end); intros; discriminate|].
-  repeat (match goal with |- _ /\ _ => split end).
-  (* parse_expr *)
-  - intros nr ts v rest H. simpl in H. grind; eauto 7 with fe.
-  (* parse_if *)
-  - intros ts v rest H. simpl in H. grind; eauto 7 with fe.
-  (* parse_arms *)
-  - intros ts v rest H. simpl in H. grind; eauto 7 with fe.
-  (* parse_operators *)
-  - intros nr ts v rest H. simpl in H. grind.
-    all: repeat match goal with H : OperandAfter _ _ _ (_, _) _ |- _ =>
-           eapply operand_of_after in H; [|eassumption]; simpl in H end.
-    all: try first [ solve [eapply OpsBitwise; eauto] | solve [eapply OpsCompare; eauto]
-               | solve [apply OpsOperand; auto; apply operand_unary; auto] ].
-  (* bit_loop *)
-  - intros nr op e ts v rest H. simpl in H. grind.
-    all: first [ eapply ChainStep; eauto; left; auto | apply ChainEnd; not_binop ].
-  (* parse_operand *)
-  - intros nr first ts v rest H. simpl in H. grind.
-    + apply binop_in_true in E as (o & Eo & Ho). rewrite Eo. left. eauto 6.
-    + unfold TermAfter, AddAfter in *. simpl in *. right. intuition eauto.
-    + unfold TermAfter, AddAfter in *. simpl in *. right.
-      destruct H1 as [Hc [(-> & -> & <-) | Hn]]; [|congruence].
-      destruct H0 as [Ht Hl]. destruct (Hl eq_refl) as [-> ->]. eauto.
-  (* add_loop *)
-  - intros nr e last ts v rest H. simpl in H. grind.
-    + unfold AddAfter, TermAfter in *. destruct H as [Hc Hd]. destruct H1 as [Ht _]. split.
-      * eapply ChainStep; eauto. eapply term_of_rest; eauto.
-      * right. destruct Hd as [(_ & _ & ->) | Hd]; [discriminate | auto].
-    + split; [apply ChainEnd; not_binop | left; auto].
-    + split; [apply ChainEnd; apply binop_in_none; auto | left; auto].
-  (* parse_term *)
-  - intros nr first ts v rest H. simpl in H. grind.
-    all: unfold TermAfter, MulAfter, TermRest in *; simpl in *.
-    + split; [|discriminate]. destruct H0 as [Hc _]. do 2 eexists. split; [eauto|]. right. eauto 10.
-    + destruct H0 as [Hc Hd]. split.
-      * do 2 eexists. split; [eauto|]. left. split; [not_binop|auto].
-      * intros ->. destruct Hd as [(-> & -> & _)|]; [auto|discriminate].
-    + destruct H0 as [Hc Hd]. split.
-      * do 2 eexists. split; [eauto|]. left. split; [apply binop_in_none|]; auto.
-      * intros ->. destruct Hd as [(-> & -> & _)|]; [auto|discriminate].
-  (* mul_loop *)
-  - intros nr e last ts v rest H. simpl in H. grind.
-    all: unfold MulAfter in *; simpl in *.
-    + apply binop_in_true in E as (o & Eo & [<-|[]]). destruct H as [Hc Hd]. split.
-      * eapply ChainStep; eauto. left; auto.
-      * right. destruct Hd as [(_ & _ & ->)|]; auto.
-    + split; [apply ChainEnd|left]; auto.
-  (* parse_unary *)
-  - intros nr ts v rest H. simpl in H. grind.
-    all: try congruence.
-    all: first [ assumption | solve [eapply UnaryNot; eauto with fe]
-               | eapply UnaryNeg; eauto with fe; unfold neg_literal_dot; intuition ].
-  (* parse_postfix *)
-  - intros nr ts v rest H. simpl in H. grind. eauto with fe.
-  (* postfix_loop *)
-  - intros e ts v rest H. simpl in H. grind.
-    all: eauto 6 with fe.
-  (* parse_lambda *)
-  - intros ts v rest H. simpl in H. crush. list_with BindForm. grind. read_bind_form. eauto 8 with fe.
-  (* parse_primary *)
-  - intros nr ts v rest H. simpl in H. crush; try list_with RecField; try list_with (Expr false); grind.
-    all: try congruence.
-    all: try solve [eauto 7 with fe].
-    all: try solve [eapply PrimTuple; eauto 7 with fe].
-  (* parse_block *)
-  - intros ts v rest H. simpl in H. grind. unfold StmtsOk in *. simpl in *. eauto with fe.
-  (* block_loop *)
-  - intros ts v rest H. simpl in H. grind. read_bind_form.
-    all: unfold StmtsOk in *; simpl in *.
-    all: try (destruct (at_ VAR ts) eqn:?; crush).
-    all: read_bind_form.
-    all: rewrite ?kind_at1 in *.
-    all: try congruence.
-    all: try solve [eauto 8 with fe].
-    all: try solve [eapply StBraced; [unfold assign_ahead; rewrite ?kind_at1; intuition | assumption
-                                     | eassumption | simpl; intuition | eassumption]].
-    all: try solve [eapply StTail; eauto with fe; unfold assign_ahead; rewrite ?kind_at1; intuition].
-    all: try solve [eapply StExpr; eauto with fe; unfold assign_ahead; rewrite ?kind_at1; intuition].
-  (* parse_bind *)
-  - intros ts v rest H. simpl in H. crush. list_with Binding. grind. eauto with fe.
-Qed.
-
-Definition expr1_sound n := proj1 (expr_sound n).
-Lemma block_sound n ts v rest : parse_block n ts = POk v rest -> Block ts v rest.
-Proof. apply expr_sound. Qed.
-Lemma bind_sound n ts v rest : parse_bind n ts = POk v rest -> Bind ts v rest.
-Proof. apply expr_sound. Qed.
-
-(* ===================== Declarations and files ============================= *)
-
-Global Hint Constructors Decl Decls Binds Function_ Use Import_ Imports DeclsToEnd : fe.
-
-Ltac use_sound ::=
-  repeat match goal with
-  | H : parse_path _ _ = POk _ _ |- _ => apply parse_path_sound in H
-  | H : parse_app_opt _ _ = POk _ _ |- _ => apply app_sound in H
-  | H : parse_spec _ _ = POk _ _ |- _ => apply spec1_sound in H
-  | H : parse_assume_item _ _ = POk _ _ |- _ => apply parse_assume_item_sound in H
-  | H : parse_ctx_item _ _ = POk _ _ |- _ => apply parse_ctx_item_sound in H
-  | H : parse_type _ _ = POk _ _ |- _ => apply type1_sound in H
-  | H : parse_record_type _ _ = POk _ _ |- _ => apply record_type_sound in H
-  | H : parse_opt_type _ _ = POk _ _ |- _ => apply opt_type_sound in H
-  | H : parse_pattern _ _ = POk _ _ |- _ => apply pattern1_sound in H
-  | H : parse_expr _ _ _ = POk _ _ |- _ => apply expr1_sound in H
-  | H : parse_block _ _ = POk _ _ |- _ => apply block_sound in H
-  | H : parse_bind _ _ = POk _ _ |- _ => apply bind_sound in H
-  end.
-
-Lemma name_list_sound n ts v rest : name_list n ts = POk v rest -> NameList ts v rest.
-Proof.
-  unfold name_list. intro H. crush. list_with TkName. unfold NameList. eauto 6 with fe.
-Qed.
-
-Lemma binds_loop_sound : forall n ts v rest, binds_loop n ts = POk v rest -> Binds ts v rest.
-Proof.
-  induction n as [|n IH1]; intros ts v rest H; simpl in H; grind; eauto with fe.
-Qed.
-
-Lemma decl_sound : forall n,
-  (forall ts v rest, parse_decl n ts = POk v rest -> Decl ts v rest) /\
-  (forall ts v rest, decls_until n ts = POk v rest -> Decls ts v rest).
-Proof.
-  induction n as [|n (IH1 & IH2)]; [split; intros; discriminate|].
-  split; intros ts v rest H; simpl in H; crush; try list_with AssumeItem; try list_with CtxItem; try list_with BindForm;
-    try list_with Spec_; try list_with Spec_; try list_with Type_; grind; read_bind_form;
-    repeat match goal with
-    | H : name_list _ _ = POk _ _ |- _ => apply name_list_sound in H
-    | H : binds_loop _ _ = POk _ _ |- _ => apply binds_loop_sound in H
-    end.
-  all: try congruence.
-  all: try match goal with H : match ?l with [] => _ | _ :: _ => _ end = _ |- _ => destruct l; crush end.
-  all: try match goal with |- Decl _ (ADFn ?r ?x _ _ _) _ =>
-         first [ solve [eapply (DFn _ _ (r, x)); eauto 7 with fe]
-               | solve [eapply (DFnAbstract _ _ (r, x)); eauto 7 with fe] ] end.
-  all: try solve [eauto 8 with fe].
-  all: try discriminate.
-  all: try match goal with H : _ = POk _ _, Ht : Type_ _ ?t _ |- _ => is_var t; destruct t; crush end.
-  all: try solve [eapply DBareTag; eauto with fe; unfold TagParams; eauto with fe].
-  all: try solve [eapply DTagRecord; eauto with fe; unfold TagParams; eauto with fe].
-  all: try solve [eapply DTag; eauto with fe; unfold TagParams; eauto with fe].
-Qed.
-
-Lemma decl1_sound n ts v rest : parse_decl n ts = POk v rest -> Decl ts v rest.
-Proof. apply decl_sound. Qed.
-
-Lemma use_name_sound ts v rest : use_name ts = POk v rest -> UseName ts v rest.
-Proof. unfold use_name, UseName. intro H. crush; simpl; eauto 6 with fe. Qed.
-
-Lemma use_item_sound ts v rest : use_item ts = POk v rest -> Use ts v rest.
-Proof.
-  unfold use_item. intro H. crush;
-    repeat match goal with H : use_name _ = POk _ _ |- _ => apply use_name_sound in H end;
-    try congruence.
-  - match goal with H : Bool.eqb _ _ = true |- _ => apply Bool.eqb_prop in H end. subst. eauto with fe.
-  - eauto with fe.
-Qed.
-
-Lemma import_sound n ts v rest : parse_import n ts = POk v rest -> Import_ ts v rest.
-Proof.
-  unfold parse_import. intro H. crush;
-    try (match goal with H : comma_list _ _ _ _ = POk _ _ |- _ =>
-           apply (comma_list_sound Use) in H; [|exact use_item_sound] end).
-  all: eapply ImportG; eauto with fe; unfold TkText; eauto 10 with fe.
-  all: match goal with H : Tk STRING _ _ |- _ => destruct H end; repeat split; auto.
-Qed.
-
-Lemma imports_sound : forall n ts v rest, imports_loop n ts = POk v rest -> Imports ts v rest.
-Proof.
-  induction n as [|n IH1]; intros ts v rest H; simpl in H; crush;
-    repeat match goal with H : parse_import _ _ = POk _ _ |- _ => apply import_sound in H end;
-    feed; eauto with fe.
-Qed.
-
-Lemma decls_to_eof_sound : forall n ts v rest, decls_to_eof n ts = POk v rest -> DeclsToEnd ts v rest.
-Proof.
-  induction n as [|n IH1]; intros ts v rest H; simpl in H; crush;
-    repeat match goal with H : parse_decl _ _ = POk _ _ |- _ => apply decl1_sound in H end;
-    feed; eauto with fe.
-Qed.
-
-Theorem parse_tokens_sound ts f rest : parse_tokens ts = POk f rest -> File ts f.
-Proof.
-  unfold parse_tokens. intro H. crush.
-  repeat match goal with
-  | H : imports_loop _ _ = POk _ _ |- _ => apply imports_sound in H
-  | H : decls_to_eof _ _ = POk _ _ |- _ => apply decls_to_eof_sound in H
-  end.
-  do 2 eexists. split; eassumption.
-Qed.
 
 (* ===================== The lexer ========================================== *)
 
@@ -922,21 +264,6 @@ Qed.
 Theorem lex_sound cs ts : lex cs = LOk ts -> Lexes 0 cs ts.
 Proof. unfold lex. intro H. apply lex_go_sound in H as (ts' & -> & H). exact H. Qed.
 
-(* Part VI's parser_sound. *)
-Theorem parse_moss_sound s f : parse_moss s = Good f -> Derives (list_byte_of_string s) f.
-Proof.
-  unfold parse_moss. intro H.
-  destruct (lex (map fst (raw_source (newlines (list_byte_of_string s))))) as [ts|m o] eqn:El; [|discriminate].
-  destruct (parse_tokens ts) as [f' rest|m o] eqn:Ep; [|discriminate].
-  injection H as <-. exists ts. split; [apply lex_sound; auto | eapply parse_tokens_sound; eauto].
-Qed.
-
-(* ######################################################################## *)
-(* Completeness: a derivation is what the parser finds                       *)
-(* ######################################################################## *)
-
-(* ===================== The lexer ========================================== *)
-
 Lemma span_app p a b : forallb p a = true -> starts p b = false -> span p (a ++ b)%list = (a, b).
 Proof.
   induction a as [|c a IH]; intros Ha Hb; simpl in *.
@@ -1133,171 +460,88 @@ Qed.
 Theorem lex_complete cs ts : Lexes 0 cs ts -> lex cs = LOk ts.
 Proof. intro H. unfold lex. rewrite (lex_go_complete _ _ _ H); auto. Qed.
 
-(* ===================== Token lists that end in EOF ======================== *)
+(* Menhir parses a prefix of an infinite stream. Padding is outside the
+   grammar, and the entry point checks that it is next on success. *)
+Module G := MossGrammar.Gram.
+Module LR := MossGrammar.MenhirLibParser.Inter.
 
-(* The lexer's output ends with the EOF token, which no rule consumes; so
-   every token consumed shortens the list.  The parser's fuel bound rests on
-   that. *)
-Definition Ends (ts : list token) : Prop := exists pre x o, ts = (pre ++ [Tok EOF x o])%list.
+Definition source_symbol (s : G.symbol) : bool :=
+  match s with G.T G.PADDING't => false | _ => true end.
 
-Lemma lexes_ends i cs ts : Lexes i cs ts -> Ends ts.
+Lemma source_productions :
+  forallb (fun p => forallb source_symbol (G.prod_rhs_rev p))
+    (MenhirLib.Alphabet.all_list (A := G.production)) = true.
+Proof. vm_compute. reflexivity. Qed.
+
+Lemma production_has_source_symbols p : Forall (fun s => source_symbol s = true) (G.prod_rhs_rev p).
 Proof.
-  induction 1 as [i| | |i cs k r ts Hx H (pre & x & o & ->)]; auto.
-  - exists [], "", i. reflexivity.
-  - exists (Tok k (string_of_list_byte cs) i :: pre), x, o. reflexivity.
+  apply (proj2 (Forall_forall _ _)). intros s Hin.
+  pose proof source_productions as H.
+  rewrite forallb_forall in H.
+  specialize (H p (MenhirLib.Alphabet.all_list_forall p)).
+  rewrite forallb_forall in H. exact (H s Hin).
 Qed.
 
-Lemma ends_len ts : Ends ts -> 1 <= length ts.
-Proof. intros (pre & x & o & ->). rewrite app_length. simpl. lia. Qed.
-
-Lemma ends_advance ts : Ends ts -> kind ts <> EOF -> Ends (advance ts) /\ length (advance ts) < length ts.
+Lemma tree_has_source_tokens :
+  forall s word (tree : G.parse_tree s word),
+    source_symbol s = true -> Forall (fun t => MossGrammar.is_padding t = false) word.
 Proof.
-  intros (pre & x & o & ->) Hk. destruct pre as [|t pre]; [exfalso; apply Hk; reflexivity|].
-  simpl. replace (advance (t :: pre ++ [Tok EOF x o])%list) with (pre ++ [Tok EOF x o])%list
-    by (destruct pre; reflexivity).
-  split; [exists pre, x, o; reflexivity | lia].
+  fix go 3 with (go_list (ss : list G.symbol) (word : list G.token)
+      (trees : G.parse_tree_list ss word) {struct trees} :
+      Forall (fun s => source_symbol s = true) ss ->
+      Forall (fun t => MossGrammar.is_padding t = false) word).
+  - intros s word [t | p w children] H.
+    + constructor; [destruct t; discriminate || reflexivity | constructor].
+    + apply (go_list _ _ children), production_has_source_symbols.
+  - intros ss word [|symbols w children s u child] H.
+    + constructor.
+    + apply Forall_app. inversion H; subst. split; eauto.
 Qed.
 
-Lemma Tk_ends k ts ts' : Tk k ts ts' -> k <> EOF -> Ends ts -> Ends ts' /\ length ts' < length ts.
-Proof. intros [E ->] Hk He. apply ends_advance; congruence. Qed.
-
-Lemma at_eq k ts : kind ts = k -> at_ k ts = true.
-Proof. unfold at_. intros ->. apply token_kind_eqb_refl. Qed.
-Lemma at_neq k ts : kind ts <> k -> at_ k ts = false.
-Proof. unfold at_. intro H. apply token_kind_eqb_neq. auto. Qed.
-Lemma at_any_in ks ts : In (kind ts) ks -> at_any ks ts = true.
-Proof. unfold at_any. intro H. apply existsb_exists. exists (kind ts). split; auto. apply token_kind_eqb_refl. Qed.
-Lemma at_any_nin ks ts : ~ In (kind ts) ks -> at_any ks ts = false.
+Lemma mapped_source_tokens ts :
+  Forall (fun t => MossGrammar.is_padding t = false) (map MossGrammar.of_token ts).
 Proof.
-  unfold at_any. intro H. destruct (existsb (token_kind_eqb (kind ts)) ks) eqn:E; auto.
-  apply existsb_exists in E as (k & Hin & Ek). apply token_kind_eqb_eq in Ek. subst. contradiction.
-Qed.
-Lemma expect_eq k ts : kind ts = k -> expect k ts = POk (peek ts) (advance ts).
-Proof. intro H. unfold expect. rewrite at_eq; auto. Qed.
-Lemma expect_name_eq ts x ts' : TkName ts x ts' -> expect_name ts = POk x ts'.
-Proof. intros (E1 & E2 & ->). unfold expect_name. rewrite expect_eq; auto. simpl. rewrite E2. reflexivity. Qed.
-
-Lemma expect_name_eq' ts : kind ts = NAME -> expect_name ts = POk (tx (peek ts)) (advance ts).
-Proof. intro E. unfold expect_name. rewrite expect_eq; auto. Qed.
-
-(* What a completeness lemma concludes: the parser finds it, and the rest
-   is shorter (strictly, `Ok1`, for what always consumes a token). *)
-Definition Ok {A} (r : pr A) (v : A) (ts rest : list token) : Prop :=
-  r = POk v rest /\ Ends rest /\ length rest <= length ts.
-Definition Ok1 {A} (r : pr A) (v : A) (ts rest : list token) : Prop :=
-  r = POk v rest /\ Ends rest /\ length rest < length ts.
-
-(* Every Tk in the context: record the shorter list and its end. *)
-Ltac tks :=
-  repeat match goal with
-  | H : Tk ?k ?ts ?ts', He : Ends ?ts |- _ =>
-      let E1 := fresh "En" in let L1 := fresh "Ln" in
-      destruct (Tk_ends k ts ts' H ltac:(discriminate) He) as [E1 L1];
-      let E := fresh "Ek" in let A := fresh in destruct H as [E A]; subst ts'
-  | H : TkText ?k ?ts ?x ?ts', He : Ends ?ts |- _ =>
-      let E1 := fresh "En" in let L1 := fresh "Ln" in
-      destruct (Tk_ends k ts ts' (conj (proj1 H) (proj2 (proj2 H))) ltac:(discriminate) He) as [E1 L1];
-      let E := fresh "Ek" in let X := fresh "Ex" in let A := fresh in destruct H as (E & X & A); subst ts'
-  | H : TkName ?ts ?x ?ts', He : Ends ?ts |- _ =>
-      let E1 := fresh "En" in let L1 := fresh "Ln" in
-      destruct (Tk_ends NAME ts ts' (conj (proj1 H) (proj2 (proj2 H))) ltac:(discriminate) He) as [E1 L1];
-      let E := fresh "Ek" in let X := fresh "Ex" in let A := fresh in destruct H as (E & X & A); subst ts'
-  end.
-
-(* Decide the parser's tests from what is known of the next tokens. *)
-Ltac known := first [ assumption | congruence | discriminate
-                    | (intro; congruence) | (simpl; intros; intuition congruence) ].
-Ltac decide_ :=
-  repeat first
-    [ rewrite at_eq by known | rewrite at_neq by known
-    | rewrite at_any_in by known | rewrite at_any_nin by known
-    | rewrite expect_eq by known
-    | match goal with H : TkName ?ts ?x _ |- context [expect_name ?ts] => rewrite (expect_name_eq _ _ _ H) end
-    | rewrite expect_name_eq' by known
-    | match goal with H : tx (peek ?t) = ?x |- context [tx (peek ?t)] => rewrite H end
-    | progress (cbv beta iota zeta delta [pbind]) ].
-
-Lemma comma_list_complete {A} (X : list token -> A -> list token -> Prop) item closers :
-  forall ts xs rest, CommaList X closers ts xs rest -> Ends ts ->
-  (forall t v r, X t v r -> Ends t -> length t <= length ts -> Ok (item t) v t r) ->
-  forall m, length ts < m -> Ok (comma_list m item closers ts) xs ts rest.
-Proof.
-  induction 1 as [ts Hc | ts x ts1 Hc Hx Hk | ts x ts1 ts2 xs ts3 Hc Hx Ht Hl IH];
-    intros He Hi m Hm; (destruct m as [|m]; [lia|]); simpl.
-  - rewrite at_any_in by auto. split; auto.
-  - rewrite at_any_nin by auto. destruct (Hi _ _ _ Hx He ltac:(lia)) as (-> & E1 & L1). simpl.
-    rewrite at_neq by auto. split; auto.
-  - rewrite at_any_nin by auto. destruct (Hi _ _ _ Hx He ltac:(lia)) as (-> & E1 & L1). simpl.
-    destruct (Tk_ends _ _ _ Ht ltac:(discriminate) E1) as [E2 L2]. destruct Ht as [Ek ->].
-    rewrite at_eq by auto.
-    destruct (IH E2 ltac:(intros; apply Hi; auto; lia) m ltac:(lia)) as (-> & E3 & L3). simpl.
-    split; [reflexivity | split; auto; lia].
+  induction ts as [|[k text offset] ts IH]; simpl; constructor; auto.
+  now destruct k.
 Qed.
 
-(* ===================== Names, specs, types, patterns ====================== *)
-
-Lemma path_rest_complete : forall ts p rest, Path ts p rest -> Ends ts ->
-  forall x q, p = x :: q -> forall n acc, length ts <= n ->
-  Ok (path_rest n (x :: acc) (advance ts)) ((rev acc ++ x :: q)%list) ts rest /\ length rest < length ts.
+Lemma whole_source_prefix xs ys rest :
+  Forall (fun t => MossGrammar.is_padding t = false) xs ->
+  Forall (fun t => MossGrammar.is_padding t = false) ys ->
+  LR.app_buf xs padding = LR.app_buf ys rest ->
+  MossGrammar.is_padding (LR.buf_head rest) = true ->
+  xs = ys.
 Proof.
-  induction 1 as [ts y ts1 Hy Hk | ts y ts1 ts2 p ts3 Hy Ht Hp IH]; intros He x q Eq n acc Hn;
-    injection Eq as <- <-; tks; (destruct n as [|n]; [lia|]); simpl.
-  - rewrite at_neq by auto. unfold rev'. rewrite <- rev_alt. simpl. repeat split; auto; lia.
-  - rewrite at_eq by auto.
-    match goal with E : Ends (advance (advance ts)) |- _ => rename E into E2 end.
-    assert (Hq := path_first _ _ _ Hp). destruct Hq as (q' & -> & _).
-    assert (Hk2 : kind (advance (advance ts)) = NAME)
-      by (destruct Hp as [? ? ? (E & _) | ? ? ? ? ? ? (E & _) _ _]; auto).
-    rewrite expect_name_eq' by auto. simpl.
-    edestruct (IH E2 _ q' eq_refl n (y :: acc)) as ((Ep & E3 & L3) & L4); [lia|].
-    unfold Ok. repeat split; auto; try lia.
-    etransitivity; [exact Ep|]. simpl. rewrite <- app_assoc. reflexivity.
+  revert ys. induction xs as [|x xs IH]; intros [|y ys] Hx Hy Hbuf Hend; auto.
+  - inversion Hy; subst.
+    pose proof (f_equal LR.buf_head Hbuf) as E. change (MossGrammar.PADDING tt = y) in E.
+    subst y. discriminate.
+  - inversion Hx; subst.
+    pose proof (f_equal LR.buf_head Hbuf) as E. change (x = LR.buf_head rest) in E.
+    congruence.
+  - inversion Hx; inversion Hy; subst.
+    pose proof (f_equal LR.buf_head Hbuf) as E. change (x = y) in E. subst y.
+    f_equal. eapply IH; eauto. exact (f_equal LR.buf_tail Hbuf).
 Qed.
 
-Lemma path_complete ts p rest : Path ts p rest -> Ends ts -> forall n, length ts <= n -> Ok1 (parse_path n ts) p ts rest.
+Theorem parse_tokens_sound ts f : parse_tokens ts = MossActions.Checked f -> File ts f.
 Proof.
-  intros Hp He n Hn. unfold parse_path.
-  assert (Hx := path_first _ _ _ Hp). destruct Hx as (q & -> & _).
-  assert (Hk : kind ts = NAME) by (destruct Hp as [? ? ? (E & _) | ? ? ? ? ? ? (E & _) _ _]; auto).
-  rewrite expect_name_eq' by auto. simpl.
-  destruct (path_rest_complete _ _ _ Hp He _ _ eq_refl n [] Hn) as ((Ep & E1 & L1) & L2).
-  repeat split; auto.
+  unfold parse_tokens.
+  set (input := LR.app_buf (map MossGrammar.of_token ts) padding).
+  pose proof (MossGrammar.file_correct (parse_log_fuel ts) input) as Sound.
+  destruct (MossGrammar.file (parse_log_fuel ts) input) as [st t | | result rest]; try discriminate.
+  destruct (MossGrammar.is_padding (LR.buf_head rest)) eqn:End; [|discriminate].
+  intros ->. destruct Sound as (word & tree & Prefix & Value).
+  assert (Tokens : map MossGrammar.of_token ts = word).
+  { eapply whole_source_prefix; [apply mapped_source_tokens | | exact Prefix | exact End].
+    eapply tree_has_source_tokens; [exact tree | reflexivity]. }
+  unfold File. rewrite Tokens. now exists tree.
 Qed.
 
-(* ===================== Properties of the grammar ========================== *)
-
-(* D68, as a property of the grammar: an operator expression is never
-   followed by a binary operator.  So two operators the partial order does
-   not relate, written together unparenthesized, have no derivation. *)
-Theorem operators_maximal nr ts e rest : Operators nr ts e rest -> binop rest = None.
-Proof. destruct 1; auto. Qed.
-
-Lemma path_kind ts p rest : Path ts p rest -> kind ts = NAME.
-Proof. destruct 1 as [? ? ? (E & _) _ | ? ? ? ? ? ? (E & _) _ _]; auto. Qed.
-
-(* A type starts with `|`, a name, `This`, `(` or `{`. *)
-Lemma type_atom_first ts t rest : TypeAtom ts t rest -> In (kind ts) [NAME; THIS_TYPE; LPAREN; LBRACE].
+Theorem parse_moss_sound s f : parse_moss s = Good f -> Derives (list_byte_of_string s) f.
 Proof.
-  intro H. destruct H.
-  all: try solve [match goal with H : Tk _ ?start _ |- In (kind ?start) _ => rewrite (proj1 H); simpl; auto end].
-  - match goal with H : Path _ _ _ |- _ => rewrite (path_kind _ _ _ H); simpl; auto end.
-  - match goal with H : RecordType _ _ _ |- _ => destruct H as [? ? ? ? ? [E _] _ _] end.
-    rewrite E. simpl. auto.
+  unfold parse_moss.
+  destruct (lex (map fst (raw_source (newlines (list_byte_of_string s))))) as [ts|m o] eqn:El; [|discriminate].
+  destruct (parse_tokens ts) as [f'|m o] eqn:Ep; [|discriminate].
+  intros H. injection H as <-. exists ts. split; [now apply lex_sound | now apply parse_tokens_sound].
 Qed.
-
-Lemma type_first ts t rest : Type_ ts t rest -> In (kind ts) [PIPE; NAME; THIS_TYPE; LPAREN; LBRACE].
-Proof.
-  intro H. destruct H as [ts ts1 [E _] _ | ts ts1 ms ts2 Hp Hm].
-  - rewrite E. simpl. auto.
-  - destruct Hp as [[E _]|[_ ->]]; [rewrite E; simpl; auto|].
-    destruct Hm as [? ? ? Ha _ | ? ? ? ? ? ? Ha _ _]; apply type_atom_first in Ha; simpl in *; tauto.
-Qed.
-
-(* ===================== Completeness ===================================== *)
-
-(* The parser's completeness, Part VI's parser_complete, is proved in
-   FrontEndComplete.v from the lemmas above (lex_complete, lexes_ends,
-   comma_list_complete, path_complete) by induction on the parser's fuel. *)
-
-(* Parse.walk applies SourceNames.wf_names at the AST boundary. The
-   SnapshotLoader proofs consume the parsed AST directly. *)

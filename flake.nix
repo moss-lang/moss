@@ -54,11 +54,24 @@
         rocqPackages = pkgs.mkRocqPackages (
           pkgs.rocqPackages.rocq-core.override { customOCamlPackages = ocamlPackages; }
         );
+        # Build the proof library with the same Rocq kernel as the bootstrap.
+        menhirProofs =
+          (rocqPackages.MenhirLib.override {
+            mkCoqDerivation = args: rocqPackages.mkRocqDerivation args;
+          }).overrideAttrs
+            (old: {
+              postPatch = (old.postPatch or "") + ''
+                substituteInPlace coq-menhirlib/src/Makefile \
+                  --replace-fail '$(COQBIN)coq_makefile' 'rocq makefile'
+              '';
+            });
         # Everything `dune build` in bootstrap/ needs.
         inputs = [
           rocqPackages.rocq-core
           rocqPackages.stdlib
+          menhirProofs
           ocamlPackages.ocaml
+          pkgs.ocaml-ng.ocamlPackages_4_14.menhir
           ocamlPackages.findlib
           ocamlPackages.zarith
           pkgs.dune_3

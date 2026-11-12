@@ -1,7 +1,12 @@
 ; The Rocq development, under the logical prefix NM.
 
+(rule
+ (targets MossGrammar.v)
+ (deps MossGrammar.vy)
+ (action (run menhir --rocq --strict --unused-token PADDING %{dep:MossGrammar.vy})))
+
 (rocq.theory
  (name NM)
- (theories Stdlib)
+ (theories Stdlib MenhirLib)
  (flags
   (:standard -w -abstract-large-number,-non-full-mutual,-deprecated)))

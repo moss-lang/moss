@@ -1,1 +1,1 @@
-[front end: bundle: tests/errors/type_not_tag.moss: 2:16: ParseError: `type Wrapped` is abstract (`;`) or an alias (`=`); declare a nominal type with `tag` (D83)]
+[front end: bundle: tests/errors/type_not_tag.moss: 2:16: ParseError: unexpected NAME]

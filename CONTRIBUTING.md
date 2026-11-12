@@ -102,6 +102,13 @@ to an explicit, commented list of known gaps
 added to `tests/` that one accepts and the other rejects fails the suite
 until one of them is fixed or the gap is listed with its reason.
 
+For syntax changes, edit the reference grammar in
+[`MossGrammar.vy`](bootstrap/theories/MossGrammar.vy) and the self-hosted
+parser in [`syntax.moss`](src/syntax.moss). The bootstrap build regenerates
+the Rocq parser and checks the Menhir certificate. The
+[`selfhosted::syntax` tests](crates/moss-tests/tests/suite/selfhosted.rs)
+compare AST dumps from both parsers.
+
 The native CLI requests readable diagnostics from the self-hosted compiler.
 Direct users of `mossc.wasm ENTRY` retain the compact diagnostic protocol;
 `mossc.wasm ENTRY --diagnostics=human` selects messages and source excerpts.

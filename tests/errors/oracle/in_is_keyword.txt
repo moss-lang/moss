@@ -1,1 +1,1 @@
-[front end: bundle: tests/errors/in_is_keyword.moss: 2:6: ParseError: expected NAME, found IN]
+[front end: bundle: tests/errors/in_is_keyword.moss: 2:6: ParseError: unexpected IN]

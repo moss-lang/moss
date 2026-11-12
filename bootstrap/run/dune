@@ -13,8 +13,11 @@
   EaPlatform EaTypes ElabWorld ExecutionModel
   FloatClass Hexadecimal HTrie IntDef List0 ListDef MossX Nat NatDef NatTrie NMap
   Number Parse PeanoNat PosDef PrimArray PrimFloat PrimInt63 PublicMergePresent PublicWorld
-  ReqsSolve ReqsTotal SnapshotLoader Specif String0 Sx Uint63Axioms WorldSound)
- (theories NM Stdlib))
+  ReqsSolve ReqsTotal SnapshotLoader Specif String0 Sx Uint63Axioms WorldSound
+  Alphabet Automaton FMapAVL FMapList FSetAVL Grammar Int0 Interpreter
+  Interpreter_complete Interpreter_correct Main MossActions MossGrammar MSetAVL MSetInterface
+  OrderedType Orders OrdersAlt OrdersFacts OrdersTac Surface Validator_complete Validator_safe)
+ (theories NM Stdlib MenhirLib))
 
 ; Flambda honours the `[@inlined]` in Extract.v's `nat_case`, releasing
 ; each frame's earlier machine-state versions at their last use.

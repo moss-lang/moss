@@ -13,11 +13,13 @@ From NM Require
   EaLinkBodySound EaLiteralSound EaMainSymbols EaMentionsSound EaMergeSound EaMetadataSound
   EaMethodSound EaOutputSound EaPatternSound EaProviderBindSound EaResultBudget
   EaResultCoverage EaResultSound EaRootSound EaSatisfiesSound EaTypesSound EaUnifySound
-  EaValuePathSound EaWorldSound EaWrappedProviderSound.
+  EaValuePathSound EaWorldSound EaWrappedProviderSound FrontEnd FrontEndComplete.
 
 Definition root {T : Type} (proof : T) : {T : Type & T} := existT (fun T => T) T proof.
 
 Definition closed_roots : list {T : Type & T} := [
+  root (@NM.FrontEnd.parse_moss_sound);
+  root (@NM.FrontEndComplete.parse_moss_complete);
   root (@NM.EaTypesSound.ty_of_sound);
   root (@NM.EaTypesSound.brackets_sound);
   root (@NM.EaTypesSound.sig_of_sound);

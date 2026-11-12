@@ -1,1 +1,1 @@
-[front end: bundle: tests/errors/stray_colon.moss: 1:11: ParseError: expected a type, found SEMI]
+[front end: bundle: tests/errors/stray_colon.moss: 1:11: ParseError: unexpected SEMI]
