@@ -7,9 +7,9 @@ type X;
 assume X { tag A[X](X); }
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 
-type U = | A[X=I32] | A[X=Colour];
+type U = A[X=I32] | A[X=Colour];
 
 assume Wasm, WasiCore {
   fn pick(u: U): I32 {

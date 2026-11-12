@@ -20,7 +20,7 @@ assume Std {
   # use one.
   tag Lit(Char);
   tag Both { l: Char, r: Char };
-  type Node = | Lit | Both | Eof;
+  type Node = Lit | Both | Eof;
 
   fn Point.swap(): Point { Point { x = this.y, y = this.x } }
 

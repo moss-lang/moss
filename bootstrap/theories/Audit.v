@@ -3070,6 +3070,19 @@ Definition fixed_app (fx : subst) : inst :=
 Definition add_tys (xs : list nat) (tm : list (nat * ty)) : list (nat * ty) :=
   fold_left (fun tm x => match nlook x tm with Some _ => tm | None => (x, TAbs x) :: tm end) xs tm.
 
+(* An equation introduces the abstract types it names. Its concrete
+   references are read as types when the two sides are checked. *)
+Definition equation_types (W : world) (p : string) (l r : aty) : list spec :=
+  filter (fun sp =>
+    match sp with
+    | Spec (Some path) None None =>
+        match resolve_sym W p path with
+        | Some t => match kind_sym W t with Some DKType => true | _ => false end
+        | None => false
+        end
+    | _ => false
+    end) (ty_heads l ++ ty_heads r).
+
 (* `ItemEntries W p ob tm sp es tm'`: the context item `sp`, written in
    module p, under the enclosing items' bracket bindings `ob`, introduces
    entries `es`; the type meanings in force grow from tm to tm' (each
@@ -3083,11 +3096,6 @@ Inductive ItemEntries (W : world) : string -> list (nat * ty) -> list (nat * ty)
     resolve_sym W p pa = Some t -> kind_sym W t = Some DKType ->
     ItemEntries W p ob tm (Spec (Some pa) None None) [NTy t]
                 (match nlook t tm with Some _ => tm | None => (t, TAbs t) :: tm end)
-| IENothing : forall p ob tm pa s k,
-    resolve_sym W p pa = Some s -> kind_sym W s = Some k ->
-    (k = DKTag \/ k = DKAlias \/
-     (k = DKVal /\ exists d n t i, w_decl W s = Some d /\ d_ast d = ADVal n t (Some i))) ->
-    ItemEntries W p ob tm (Spec (Some pa) None None) [] tm
 | IEVal : forall p ob tm a pa s d n t ty0 bs ap,
     resolve_sym W p pa = Some s -> w_decl W s = Some d -> d_ast d = ADVal n t None ->
     Brackets W p (ob ++ tm) s a bs ->
@@ -3122,14 +3130,11 @@ with ItemsEntries (W : world) : string -> list (nat * ty) -> list (nat * ty) -> 
 | IsCons : forall p ob tm sp r es1 tm1 es2 tm2,
     ItemEntries W p ob tm sp es1 tm1 -> ItemsEntries W p ob tm1 r es2 tm2 ->
     ItemsEntries W p ob tm (CISpec sp :: r) (es1 ++ es2) tm2
-(* [D90]: an equation `l = r` names the references its sides write
-   (`ty_heads`), each read as an unbracketed item: a type symbol among them
-   is put in force as its own generation unless it is already (rule B: it
-   is a requirement, as if assumed).  It then merges its two sides, read
-   here: a merge constraint only, with no key and so no need.  The sides'
-   order does not matter (`PublicEquation`). *)
+(* [D90]: introduce the abstract types the equation names, read both
+   sides, then add their equality as a constraint with no provision key.
+   The sides' order does not matter (`PublicEquation`). *)
 | IsEq : forall p ob tm l r es1 tm1 tl tr rest es2 tm2,
-    ItemsEntries W p ob tm (map CISpec (ty_heads l ++ ty_heads r)) es1 tm1 ->
+    ItemsEntries W p ob tm (map CISpec (equation_types W p l r)) es1 tm1 ->
     TyOf W p (ob ++ tm1) None l tl -> TyOf W p (ob ++ tm1) None r tr ->
     ItemsEntries W p ob tm1 rest es2 tm2 ->
     ItemsEntries W p ob tm (CIEq l r :: rest) (es1 ++ NEq tl tr :: es2) tm2.

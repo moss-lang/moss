@@ -53,24 +53,11 @@ Proof.
           try discriminate.
         -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
            eapply IEType; [exact Resolve|]. unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
-        -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-           eapply IENothing; [exact Resolve| |right; left; reflexivity].
-           unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
-        -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-           eapply IENothing; [exact Resolve| |left; reflexivity].
-           unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
-        -- destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-           eapply IENothing; [exact Resolve| |left; reflexivity].
-           unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
-        -- destruct initial as [initial|].
-           ++ destruct application; [discriminate|]. cbn [rbind] in Run. injection Run as <- <-.
-              eapply IENothing; [exact Resolve| |right; right; split; [reflexivity|]].
-              ** unfold kind_sym. rewrite Declaration. cbn. rewrite Ast. reflexivity.
-              ** exists d, name, value_type, initial. split; assumption.
-           ++ apply rbind_ok in Run as [bindings [Brackets Run]].
-              apply rbind_ok in Run as [meaning [Meaning Run]]. injection Run as <- <-.
-              eapply IEVal; [exact Resolve|exact Declaration|exact Ast|
-                eapply brackets_sound; exact Brackets|eapply ty_of_sound; exact Meaning|apply applications_sound].
+        -- destruct initial as [initial|]; [discriminate|].
+           apply rbind_ok in Run as [bindings [Brackets Run]].
+           apply rbind_ok in Run as [meaning [Meaning Run]]. injection Run as <- <-.
+           eapply IEVal; [exact Resolve|exact Declaration|exact Ast|
+             eapply brackets_sound; exact Brackets|eapply ty_of_sound; exact Meaning|apply applications_sound].
         -- destruct receiver; try discriminate.
            apply rbind_ok in Run as [bindings [Brackets Run]].
            apply rbind_ok in Run as [signature [Signature Run]]. injection Run as <- <-.

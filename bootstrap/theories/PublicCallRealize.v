@@ -135,8 +135,6 @@ Proof.
       change t with (fst (t, v)). apply in_map, Found.
     + split; [constructor; [reflexivity|exact Id]|]. split; [intros x Ix; right; exact Ix|].
       intros g Ig. cbn in Ig. destruct Ig as [<-|[]]. left. reflexivity.
-  - (* nothing *) intros p ob tm pa s k R K Kind Id Ob. split; [exact Id|]. split; [intros x Ix; exact Ix|].
-    intros g []. 
   - (* val *) intros p ob tm a pa s d n t ty0 bs ap R D Ast B T App Id Ob.
     pose proof (brackets_scoped p ob tm s a bs Id Ob B) as Bs.
     split; [exact Id|]. split; [intros x Ix; exact Ix|].

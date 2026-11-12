@@ -53,7 +53,7 @@ Fixpoint item_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat
               let! _ := rcheck none_a (bq (sym_name W s) ++ " takes no brackets in a context (D71)") in
               Ok ([NTy s], match nlook s tm with Some _ => tm | None => (s, TAbs s) :: tm end)
           | ADBareTag _ | ADTag _ _ _ | ADAlias _ _ | ADVal _ _ (Some _) =>
-              let! _ := rcheck none_a (bq (sym_name W s) ++ " takes no brackets in a context (D71)") in Ok ([], tm)
+              Err (qs W s ++ " is concrete and cannot be listed as a context input")
           | ADVal _ t None =>
               let! bs := brackets W fuel p (ob ++ tm) s a in
               let tm2 := bs ++ ob ++ tm in
@@ -96,9 +96,7 @@ with items_entries (n : nat) (stk : list nat) (p : string) (ob tm : list (nat * 
           let! (es2, tm2) := items_entries n' stk p ob tm1 r in
           Ok (es1 ++ es2, tm2)
       | CIEq l r :: rest =>
-          (* [D90] (IsEq): the references the sides write, as unbracketed
-             items, then both sides read, as one keyless entry *)
-          let! (es1, tm1) := items_entries n' stk p ob tm (map CISpec (ty_heads l ++ ty_heads r)) in
+          let! (es1, tm1) := items_entries n' stk p ob tm (map CISpec (equation_types W p l r)) in
           let! tl := ty_of W fuel p (ob ++ tm1) None l in
           let! tr := ty_of W fuel p (ob ++ tm1) None r in
           let! (es2, tm2) := items_entries n' stk p ob tm1 rest in

@@ -1,5 +1,5 @@
 import "./access.moss" use Elem, Index, .get, .set, .length, .push, .read, .begin, .more, .after;
-import "./bool.moss" use Bool, False, True;
+import "./bool.moss" use Bool;
 import "./cell.moss" use CellInt, cell_int, .write;
 # Detached methods must be imported where their context items are named.
 import "./byte.moss" use ByteTypes, Bytes;
@@ -30,9 +30,6 @@ assume IntList {
 # (D61): `Elem` is one symbol, applied here once per provision, so the
 # substitutions never meet.
 context Std =
-  Bool,
-  False,
-  True,
   Bool.not,
   Bool.and,
   Bool.or,

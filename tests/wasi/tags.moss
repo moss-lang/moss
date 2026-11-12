@@ -14,7 +14,7 @@ tag Box(I32);
 tag Red;
 tag Green;
 tag Blue;
-type Colour = | Red | Green | Blue;
+type Colour = Red | Green | Blue;
 
 assume Wasm, WasiCore, Branch {
   fn two(): I32 { w::i32_add(w::i32_one, w::i32_one) }

@@ -256,6 +256,9 @@ assume Std {
   # "a functor's result cannot hold the type equations of `C`".
   fn e_eq_result(): Int { 16 + 17 }
 
+  # A tag, alias or defined val was listed as a context input.
+  fn e_concrete_context(): Int { 16 + 18 }
+
   context Prog =
     mpaths, mroots, mnroots, mstate, mtext, sources, pinfo,
     ent_head, ent_link,

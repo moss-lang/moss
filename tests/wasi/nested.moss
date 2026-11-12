@@ -12,7 +12,7 @@ import "../../lib/wasip1.moss" use WasiCore;
 assume Std {
   tag Read(Char);
   tag Eof;
-  type Peek = | Read | Eof;
+  type Peek = Read | Eof;
 
   tag Point { x: Char, y: Char };
   tag Span { from: Point, to: Point };

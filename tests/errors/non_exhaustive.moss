@@ -6,7 +6,7 @@ import "wasip1.moss" use WasiCore;
 assume Std {
   tag A;
   tag B;
-  type AB = | A | B;
+  type AB = A | B;
 
   fn pick(x: AB): Char {
     match x {

@@ -5,7 +5,7 @@ import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 # no head for a match arm to name), so it is no member (Audit note 34).
 tag P { a: I32 };
 tag Red;
-type U = | { a: I32 } | Red;
+type U = { a: I32 } | Red;
 
 assume Wasm, WasiCore {
   fn get(u: U): I32 {

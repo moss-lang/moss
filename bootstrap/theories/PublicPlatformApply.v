@@ -59,7 +59,6 @@ Proof.
     (fun p ob tm sp es tm' _ => IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es)
     (fun p ob tm sps es tm' _ => IdForm tm -> Scoped tm (tm_gens ob) -> Forall FunSelf es)).
   - intros. repeat constructor.
-  - intros. constructor.
   - intros. repeat constructor.
   - intros. repeat constructor.
   - intros p ob tm pa u d n ps args res fx R D Ast Fixed FR Id Ob. constructor; [|constructor].

@@ -562,8 +562,8 @@ fn copied_input_merge_must_hold_for_every_target_application() {
 fn result_leaf_identity_expands_contexts_and_skips_concrete_items() {
     let entry = source("tag Skip;type Alias=Skip;val constant:Skip=Skip; \
         fn helper():Skip{Skip}fn out(); \
-        context Inner=out,Skip,Alias,constant,helper;context Outputs=Inner; \
-        functor F[]:->Outputs;functor H[]:->out; \
+        context Inner=out;context Outputs=Inner; \
+        functor F[]:->Outputs,Skip,Alias,constant,helper;functor H[]:->out; \
         functor G:->out{bind out=()=>();} \
         fn main(){bind H=G;bind F=H;bind F;out();}");
     let bytes = build_with(&entry, "");

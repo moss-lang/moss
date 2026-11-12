@@ -9,7 +9,7 @@ type T;
 tag B(I32);
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 
 assume Wasm, T {
   fn pick(x: T): I32 {

@@ -1004,7 +1004,6 @@ Proof.
   - (* type *) intros p ob tm pa t R K Ob Id Ka. split; [|split; [|repeat constructor]].
     + destruct (nlook t tm); [exact Id|constructor; [reflexivity|exact Id]].
     + destruct (nlook t tm); [exact Ka|]. intros x [<-|Ix]; [exact (typed_abstract W _ K)|exact (Ka x Ix)].
-  - (* nothing *) intros p ob tm pa s k R K Kind Ob Id Ka. split; [exact Id|split; [exact Ka|constructor]].
   - (* val *) intros p ob tm a pa s d n t ty0 bs ap R D Ast B T App Ob Id Ka.
     pose proof (tmok_app W _ _ Ob (idform_ok _ Id Ka)) as Tbl. pose proof (br_ok W _ _ _ _ _ B Tbl) as Bs.
     pose proof (tmok_app W _ _ Bs Tbl) as Full.

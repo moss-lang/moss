@@ -23,7 +23,7 @@ type X;
 assume X { tag A[X](X); }
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 type T;
 
 assume T, Wasm, WasiCore {

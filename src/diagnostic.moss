@@ -62,6 +62,7 @@ assume Std {
     if code == prog::e_alias_cycle() { return "this alias is defined in terms of itself"; }
     if code == prog::e_result_collide() { return "two distinct result items of the functor are one item here"; }
     if code == prog::e_eq_result() { return "a functor's result cannot hold a type equation"; }
+    if code == prog::e_concrete_context() { return "a concrete declaration cannot be listed as a context input"; }
     return "compilation failed";
   }
 

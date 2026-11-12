@@ -7,7 +7,7 @@ import "../../lib/wasm.moss" as w use Wasm, I32;
 
 tag Red;
 tag Green;
-type Colour = | Green | Red;
+type Colour = Green | Red;
 
 assume Wasm {
   fn pick(c: Colour): I32 {

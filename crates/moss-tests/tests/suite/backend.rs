@@ -1944,6 +1944,24 @@ fn assumptions_check_their_entire_context_in_order() {
     }
 }
 
+#[test]
+fn concrete_declarations_are_not_context_inputs() {
+    for declaration in ["tag C;", "tag C(());", "type C=();", "val C: () = ();"] {
+        for input in ["assume C { fn f() {} }", "context Inputs=C;", "functor F: C -> T;"] {
+            let entry = source(&format!("type T; {declaration} {input} fn main() {{}}"));
+            assert!(!compile(&entry, "").is_module(), "{declaration} {input}");
+            let reference = oracle_command(&["--prelude", "", "--elab-only", &entry]);
+            assert_eq!(reference.code, ORACLE_REJECTED, "{declaration} {input}: {}", reference.stderr);
+            assert!(reference.stderr.contains("is concrete and cannot be listed as a context input"));
+        }
+    }
+
+    let entry = source("type T; tag C; type Alias=C; assume T=Alias { fn f(): T { C } } fn main() {}");
+    assert!(compile(&entry, "").is_module());
+    let reference = oracle_command(&["--prelude", "", "--elab-only", &entry]);
+    assert_eq!(reference.code, 0, "{}", reference.stderr);
+}
+
 /// The preceding `T` instantiates `seed` even though its signature omits it.
 #[test]
 fn an_assumed_provision_uses_the_preceding_type() {

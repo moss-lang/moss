@@ -59,7 +59,7 @@ assume Int, Scalar {
 }
 
 context Out =
-  Bool, true, false, Bool.xor, Int, zero, one, IntOps, Char, putchar, Int.char,
+  Bool.xor, Int, zero, one, IntOps, Char, putchar, Int.char,
   ByteTypes, String, StringLiterals, print,
   byte::x0a, byte::x20, byte::x28, byte::x29, byte::x2c, byte::x2d,
   byte::x2e, byte::x30, byte::x3a, byte::x50, byte::x61, byte::x62,
@@ -160,7 +160,7 @@ assume Out, BaseOps, tol, state {
   }
 }
 
-assume Int, zero, one, IntOps, Bool, true, false, Bool.xor, BaseOps, note {
+assume Int, zero, one, IntOps, Bool.xor, BaseOps, note {
   tag Sh { x: Scalar, X: DD };
 
   # |x - X| / |X|, with x - X in double-double so the difference is P's

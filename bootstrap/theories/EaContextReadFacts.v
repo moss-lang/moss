@@ -268,6 +268,14 @@ Local Notation W' := (ElabWorld.with_context W contexts).
 Let E := Env W strategy modules mains fuel metadata.
 Let E' := Env W' strategy modules mains fuel metadata.
 
+Lemma equation_types_context : forall p l r,
+  equation_types W' p l r = equation_types W p l r.
+Proof.
+  intros p l r. unfold equation_types. apply filter_ext.
+  intro sp. destruct sp as [[pa|] [dn|] [app|]]; try reflexivity.
+  rewrite resolve_sym_context, kind_sym_context. reflexivity.
+Qed.
+
 Theorem entries_context : forall n,
   (forall stack p ob tm syntax, item_entries E' n stack p ob tm syntax = item_entries E n stack p ob tm syntax) /\
   (forall stack p ob tm syntax, items_entries E' n stack p ob tm syntax = items_entries E n stack p ob tm syntax).
@@ -304,7 +312,8 @@ Proof.
     + reflexivity.
     + apply rbind_pointwise; [apply ItemRead|intros [head_entries head_meanings]].
       apply rbind_pointwise; [apply ItemsRead|reflexivity].
-    + apply rbind_pointwise; [apply ItemsRead|intros [head_entries head_meanings]].
+    + rewrite equation_types_context.
+      apply rbind_pointwise; [apply ItemsRead|intros [head_entries head_meanings]].
       apply rbind_pointwise; [apply ty_of_context|intro left_type].
       apply rbind_pointwise; [apply ty_of_context|intro right_type].
       apply rbind_pointwise; [apply ItemsRead|reflexivity].

@@ -293,7 +293,7 @@ declares `type Option | None | Some;` — no `=`, so by the table above this is
 a *nominal* type whose payload is the union `None | Some`, whereas
 `src/parse.moss` uses `Some (...)` / `None` directly where an
 `Option[T=TokenId]` is expected. The designer confirmed the inconsistency;
-the fix is the alias form, `type Option = | None | Some;`. Nominal-over-union
+the fix is the alias form, `type Option = None | Some;`. Nominal-over-union
 (the tag form with a union payload) remains expressible, but values must be
 explicitly wrapped and unwrapped through the nominal head — there is no
 auto-injection ([D17]).
@@ -659,6 +659,8 @@ provision ([D71], Audit note 51); its item's brackets may supply those
 local signature types. An abstract functor's
 application inputs remain deferred under [D84], while its fixed inputs
 must already be in force and cannot be supplied by a context bracket.
+Tags, aliases, and defined vals are already available by name. Listing
+them as context inputs is an error.
 Standing tests include `assume_missing_requirement_type.moss`,
 `assume_missing_requirement_need.moss`, `assume_requirements_same_list.moss`
 and `functor_fixed_bracket.moss`.
@@ -1061,7 +1063,7 @@ declares concrete units and a transparent alias —
 tag False;
 tag True;
 
-type Bool = | False | True;
+type Bool = False | True;
 ```
 
 — because the elaborator must *eliminate* a boolean at every `if`, and with
@@ -4366,7 +4368,7 @@ above was removed in November 2026.)
 **[D83] DECIDED by the designer and implemented (`tag` declares nominal types, in Rust's three forms).**
 `type` had three forms and `unit` one, and two of `type`'s told a
 nominal type from an alias by a single `=`: `type Option | None | Some;`
-and `type Option = | None | Some;` are different declarations, which is
+and `type Option = None | Some;` are different declarations, which is
 the bug [D13] fixed. `unit X;` broke the pattern the other declarations
 follow ([D41]). And a tag was written three ways: `type Literal Int;` to
 declare, `Literal (a)` to construct, `Literal n` to match. Making
@@ -5219,10 +5221,9 @@ item of its own,
   structure, and two structures in one class must unify (Δ4's rule), so
   `Buf = Bool` beside `Buf = Array[...]` is an error where the context
   forms.
-- **Rule B.** Every type symbol an equation writes is a requirement (the
-  references each side writes, its head and its brackets' right sides,
-  not their left sides, are read as unbracketed items, so a type symbol
-  among them is put in force as one is when assumed). A caller must have
+- **Rule B.** An equation introduces the abstract type symbols named by
+  each side's head or bracket right-hand sides. Concrete references are
+  read as types when the two sides are checked. A caller must have
   each in force, itself or through a member of its merge class, as for
   any requirement (AUDIT-CHANGES #60), and satisfies the equation only
   where the two sides are equal in its own context (`Satisfies`' merges

@@ -7,7 +7,7 @@ import "../../lib/wasip1.moss" use WasiCore;
 
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 
 assume Wasm, WasiCore {
   fn red(): Colour { Red }

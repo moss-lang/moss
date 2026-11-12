@@ -5,5 +5,5 @@
 # denotes a type as written; `Nope` is not in scope.
 # Verdicts: oracle accepts; native accepts; Audit before accepts (nothing
 # reads it); now rejects. Class B.
-type X = | Nope | ();
+type X = Nope | ();
 fn main() {}

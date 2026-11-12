@@ -6,7 +6,7 @@ import "../../lib/wasip1.moss" use WasiCore, proc_exit;
 type X;
 assume X { tag A[X](X); }
 
-type U = | A[X=I32] | A[X=I64];
+type U = A[X=I32] | A[X=I64];
 
 assume Wasm, WasiCore {
   fn first(u: U): I32 {

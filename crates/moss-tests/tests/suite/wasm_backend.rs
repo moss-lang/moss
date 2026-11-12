@@ -132,7 +132,7 @@ fn boxed_values_and_match() {
   tag Red;
   tag Green;
   tag Blue;
-  type Color = | Red | Green | Blue;
+  type Color = Red | Green | Blue;
   fn code(c: Color): Char {
     match c { Red => char::r, Green => char::g, Blue => char::b, }
   }
@@ -146,7 +146,7 @@ fn boxed_values_and_match() {
             r"assume Std {
   tag Wrapped(Char);
   tag Missing;
-  type Maybe = | Missing | Wrapped;
+  type Maybe = Missing | Wrapped;
   fn show(m: Maybe) {
     match m { Wrapped(c) => putchar(c), Missing => putchar(char::question), }
     putchar(char::newline);

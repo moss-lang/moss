@@ -12,7 +12,7 @@ import "../../lib/wasistd.moss" use Branch, i32_bool;
 
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 type T;
 
 assume Wasm, WasiCore {

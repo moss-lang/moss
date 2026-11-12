@@ -607,28 +607,26 @@ assume Std {
 
     fn add_assume_item_inner(env: Int, m: Int, spec: Int, recv: IntList, sym: IntList, checked: Bool): Int {
       if ast::is_kind(spec, ast::k_eq()) {
-        return add_eq_item(env, m, spec, recv, sym, int_list(), int_list(), checked);
+        return add_eq_item(env, m, spec, int_list(), checked);
       }
       add_spec(env, m, spec, recv, sym, int_list(), int_list(), checked)
     }
 
-    # D90: a type equation item `l = r`. The references its sides write
-    # (each side's head and its brackets' right sides, not their left
-    # sides) are assumed as unbracketed items, so the type symbols among
-    # them are in force, as requirements (rule B); then its two sides,
-    # read under the enclosing brackets, are merged, as two bindings of
-    # one key are (D43). Clashing structures are `e_merge`. The
-    # bootstrap's `add_eq_merge` is the same.
-    fn add_eq_item(
-      env: Int, m: Int, item: Int, recv: IntList, sym: IntList, walking: IntList,
-      over: IntList, checked: Bool
-    ): Int {
+    # D90: an equation introduces the abstract types its sides name,
+    # then merges the two readings under the enclosing brackets.
+    fn add_eq_item(env: Int, m: Int, item: Int, over: IntList, checked: Bool): Int {
       let lhs = ast::a_of(item);
       let rhs = ast::b_of(item);
       var e = env;
       var i = 0;
       while i < ast::d_of(item) {
-        e = add_spec(e, m, ast::kid_at(ast::c_of(item), i), recv, sym, walking, over, checked);
+        let path = ast::a_of(ast::kid_at(ast::c_of(item), i));
+        let symbol = prog::resolve_path(m, path);
+        if !ast::is_some(symbol) {
+          prog::error(prog::e_scope(), m, ast::path_last(path));
+        } else if prog::sym_kind.get(symbol) == prog::sk_type() {
+          e = assume_type(e, symbol);
+        }
         i = i + 1;
       }
       let named = prog::resolve_path(m, ast::a_of(lhs));
@@ -748,20 +746,28 @@ assume Std {
       }
     }
 
+    fn assume_type(env: Int, s: Int): Int {
+      if env_has(env, ek_type(), ast::none(), s) {
+        return env;
+      }
+      env_push(env, ek_type(), ast::none(), s, as_assumed(s), ast::none())
+    }
+
     fn add_symbol_item(
       env: Int, m: Int, s: Int, recv: IntList, sym: IntList, walking: IntList,
       view: Int, over: IntList, checked: Bool
     ): Int {
       let kind = prog::sym_kind.get(s);
       if kind == prog::sk_type() {
-        if env_has(env, ek_type(), ast::none(), s) {
-          return env;
-        }
-        return env_push(env, ek_type(), ast::none(), s, as_assumed(s), ast::none());
+        return assume_type(env, s);
+      }
+      if ((kind == prog::sk_alias()) | (kind == prog::sk_tag()) | (kind == prog::sk_unit())) {
+        prog::error(prog::e_concrete_context(), m, prog::sym_name.get(s));
+        return env;
       }
       if kind == prog::sk_val() {
-        # A defined val is concrete: nothing to provide (D50).
         if ast::is_some(ast::c_of(prog::sym_decl.get(s))) {
+          prog::error(prog::e_concrete_context(), m, prog::sym_name.get(s));
           return env;
         }
         check_mentions(env, view, m, ast::b_of(prog::sym_decl.get(s)), prog::sym_mod.get(s));
@@ -812,7 +818,7 @@ assume Std {
         while i < ast::c_of(d) {
           let item = ast::kid_at(ast::b_of(d), i);
           if ast::is_kind(item, ast::k_eq()) {
-            e = add_eq_item(e, prog::sym_mod.get(s), item, recv, sym, within, over, checked);
+            e = add_eq_item(e, prog::sym_mod.get(s), item, over, checked);
           } else {
             e = add_spec(e, prog::sym_mod.get(s), item, recv, sym, within, over, checked);
           }
@@ -846,8 +852,7 @@ assume Std {
           return env_push(env, ek_fn(), ast::none(), s, ast::none(), assumed_app(s, view));
         }
       }
-      # A unit, tag or alias is concrete and always available; a functor
-      # with a body is a declaration, not a provision.
+      # A functor with a body contributes no provision here.
       env
     }
 

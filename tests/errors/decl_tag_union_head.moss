@@ -11,6 +11,6 @@ type X;
 assume X { tag A[X](X); }
 tag Red;
 tag Green;
-type Colour = | Red | Green;
+type Colour = Red | Green;
 tag Both(A[X = Colour] | A[X = Red]);
 fn main() {}

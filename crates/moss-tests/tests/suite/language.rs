@@ -323,7 +323,7 @@ assume Std {
             r"assume Std {
   tag Lit(Char);
   tag Both { l: Char, r: Char };
-  type Node = | Lit | Both;
+  type Node = Lit | Both;
   fn first(n: Node): Char { match n { Lit(c) => c, Both { l, r = _ } => l, } }
   fn main() {
     putchar(first(Both { r = char::b, l = char::a }));
@@ -470,7 +470,7 @@ mod matching {
     #[test]
     fn non_exhaustive() {
         let entry = prog(
-            "  tag A;\n  tag B;\n  type AB = | A | B;\n\
+            "  tag A;\n  tag B;\n  type AB = A | B;\n\
              \x20 fn pick(x: AB): Char { match x { A => char::t, } }",
             "()",
         );
@@ -492,7 +492,7 @@ mod matching {
         let entry = prog(
             r"  tag Stop;
   tag Step(Char);
-  type Out = | Stop | Step;
+  type Out = Stop | Step;
   fn go(b: Bool): Out { if b { Step(char::s) } else { Stop } }
   fn show(o: Out): Char { match o { Step(c) => c, Stop => char::dot, } }",
             "putchar(show(go(true))); putchar(show(go(false)));",
@@ -891,7 +891,7 @@ mod representation {
             r"assume Std {
   tag A(Char);
   tag Other;
-  type C = | Other | A;
+  type C = Other | A;
   fn bare(a: A): Char { match a { A(c) => c } }
   fn tagged(c: C): Char { match c { A(ch) => ch, Other => char::n, } }
   fn main() {

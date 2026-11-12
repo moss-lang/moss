@@ -8,7 +8,7 @@ type Path;
 # with `Elem=String` — the same symbol `CellInt.read` provides at its own
 # receiver (D61); `.join` and `.readable` are this module's own.
 
-assume Bool, String, Path {
+assume String, Path {
   val pwd: Path;
 
   fn .join(name: String): Path;

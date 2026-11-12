@@ -262,7 +262,7 @@ DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
       their member by head, which is now unique.  Tests:
       tests/errors/union_shared_head*.moss.
   34. (relation permissive; decided: rejected) [D15] a union member that
-      is a bare record type, as in `type U = | {a: I32} | Red;`.  TyUnion
+      is a bare record type, as in `type U = {a: I32} | Red;`.  TyUnion
       counted `TNom rec_head` (V.0: a record's reserved head) as nominal;
       the elaborator rejected it ("not nominal (D15)") and the self-hosted
       compiler accepted it.  TyUnion now asks `n <> rec_head` of each

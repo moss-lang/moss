@@ -9,7 +9,7 @@ assume Std, Wasm, Branch {
   tag Point { x: Char, y: Char };
   tag Wrapped(Char);
   tag Missing;
-  type Maybe = | Missing | Wrapped;
+  type Maybe = Missing | Wrapped;
 
   fn flip(p: Point): Point { match p { Point { x, y } => Point { x = y, y = x }, } }
   fn show(m: Maybe): Char { match m { Wrapped(c) => c, Missing => char::n, } }

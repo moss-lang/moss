@@ -239,7 +239,6 @@ Proof.
     (fun _ _ _ _ es _ _ => Forall (EntryCallee W) es)
     (fun _ _ _ _ es _ _ => Forall (EntryCallee W) es)).
   - intros. constructor; [exact I|constructor].
-  - intros. constructor.
   - intros. constructor; [|constructor]. cbn [EntryCallee]. right. right. unfold kind_sym.
     match goal with
     | Found : w_decl _ ?s = Some ?d, Ast : d_ast ?d = ADVal _ _ _ |- _ =>
