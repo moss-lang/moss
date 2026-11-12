@@ -103,7 +103,6 @@ Fixpoint prune_e (R : rsets) (e : expr) : expr :=
   | EBind b e1 => EBind (prune_b R b) (prune_e R e1)
   | ESeq e1 e2 => ESeq (prune_e R e1) (prune_e R e2)
   | EAssign x e1 => EAssign x (prune_e R e1)
-  | EIf c e1 e2 => EIf (prune_e R c) (prune_e R e1) (prune_e R e2)
   | EWhile c b => EWhile (prune_e R c) (prune_e R b)
   | ELoop b => ELoop (prune_e R b)
   | EReturn e1 => EReturn (prune_e R e1)
@@ -143,7 +142,6 @@ Fixpoint nchk (e : expr) : bool :=
   | EMethod e0 _ it args => inS it && nchk e0 && forallb nchk args
   | ELet _ a b | ESeq a b | EWhile a b => nchk a && nchk b
   | EBind b e1 => bchk b && nchk e1
-  | EIf a b c => nchk a && nchk b && nchk c
   | ERecord fs => forallb (fun p => nchk (snd p)) fs
   | EMatch e0 arms => nchk e0 && forallb (fun p => nchk (snd p)) arms
   end
@@ -179,7 +177,6 @@ Fixpoint reads (e : expr) (s : iset) : iset :=
   | EMethod e0 _ it args => fold_left (fun acc a => reads a acc) args (reads e0 (iadd it s))
   | ELet _ a b | ESeq a b | EWhile a b => reads b (reads a s)
   | EBind b e1 => reads e1 (breads b s)
-  | EIf a b c => reads c (reads b (reads a s))
   | ERecord fs => fold_left (fun acc p => reads (snd p) acc) fs s
   | EMatch e0 arms => fold_left (fun acc p => reads (snd p) acc) arms (reads e0 s)
   end
@@ -687,7 +684,7 @@ Proof.
   split; [|split; [|split]].
   - intros S d d' g st e Hc H Hst.
     destruct e as [x| |v|n th e1|f th sm args|f args|e0 m it args|x e1 e2|bd e1|e1 e2|x e1
-                  |c e1 e2|c e1|e1|e1| |fs|e1 fl|e0 arms];
+                  |c e1|e1|e1| |fs|e1 fl|e0 arms];
       simpl in Hc |- *; andb_split.
     + (* EVar *) err.
     + (* EUnit *) err.
@@ -767,11 +764,7 @@ Proof.
       apply (IHe S); auto.
     + (* EAssign *)
       destruct (IHe S d d' g st e1 Hc H Hst) as [Hs| ->]; [stk|err].
-    + (* EIf *)
-      destruct (IHe S d d' g st c ltac:(eassumption) H Hst) as [Hs| ->]; [stk|].
-      pose proof (@inv_e k d g st c Hst) as Hn.
-      destruct (eval k P d g st c) as [[w0| | | | | | |] g0 st0]; simpl in Hn; try err.
-      rewrite truthy_eq. destruct (truthy P w0) as [[]|]; try err; apply (IHe S); auto.
+
     + (* EWhile *)
       destruct (IHe S d d' g st c ltac:(eassumption) H Hst) as [Hs| ->]; [stk|].
       pose proof (@inv_e k d g st c Hst) as Hn.

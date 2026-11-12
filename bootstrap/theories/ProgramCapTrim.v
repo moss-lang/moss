@@ -102,7 +102,6 @@ Fixpoint trim_e (T : tbl) (enc : nat -> bool) (e : expr) : expr :=
   | EBind b e1 => EBind (trim_b T enc b) (trim_e T enc e1)
   | ESeq e1 e2 => ESeq (trim_e T enc e1) (trim_e T enc e2)
   | EAssign x e1 => EAssign x (trim_e T enc e1)
-  | EIf c e1 e2 => EIf (trim_e T enc c) (trim_e T enc e1) (trim_e T enc e2)
   | EWhile c b => EWhile (trim_e T enc c) (trim_e T enc b)
   | ELoop b => ELoop (trim_e T enc b)
   | EReturn e1 => EReturn (trim_e T enc e1)
@@ -153,7 +152,6 @@ Fixpoint nchk (e : expr) : bool :=
   | EMethod e0 _ _ args => nchk e0 && forallb nchk args
   | ELet _ a b | ESeq a b | EWhile a b => nchk a && nchk b
   | EBind b e1 => bchk b && nchk e1
-  | EIf a b c => nchk a && nchk b && nchk c
   | ERecord fs => forallb (fun p => nchk (snd p)) fs
   | EMatch e0 arms => nchk e0 && forallb (fun p => nchk (snd p)) arms
   end
@@ -223,7 +221,6 @@ Fixpoint walk_e (cur : option fsym) (Dm : nat -> bool) (e : expr) (A : tbl) : tb
   | EMethod e0 _ _ args => fold_left (fun A a => walk_e cur Dm a A) args (walk_e cur Dm e0 A)
   | ELet _ a b | ESeq a b | EWhile a b => walk_e cur Dm b (walk_e cur Dm a A)
   | EBind b e1 => walk_e cur Dm e1 (walk_b cur Dm b A)
-  | EIf a b c => walk_e cur Dm c (walk_e cur Dm b (walk_e cur Dm a A))
   | ERecord fs => fold_left (fun A p => walk_e cur Dm (snd p) A) fs A
   | EMatch e0 arms => fold_left (fun A p => walk_e cur Dm (snd p) A) arms (walk_e cur Dm e0 A)
   end
@@ -788,7 +785,7 @@ Proof.
   split; [|split; [|split]].
   - intros S Dm x d d' g st e Hc H Hst.
     destruct e as [x0| |v|n th e1|f th sm args|f args|e0 m it args|x0 e1 e2|bd e1|e1 e2|x0 e1
-                  |c e1 e2|c e1|e1|e1| |fs|e1 fl|e0 arms];
+                  |c e1|e1|e1| |fs|e1 fl|e0 arms];
       simpl in Hc |- *; andb_split.
     + (* EVar *) reflexivity.
     + (* EUnit *) reflexivity.
@@ -870,11 +867,7 @@ Proof.
       apply (IHe S Dm x); auto.
     + (* EAssign *)
       rewrite (IHe S Dm x d d' g st e1 Hc H Hst). reflexivity.
-    + (* EIf *)
-      rewrite (IHe S Dm x d d' g st c ltac:(assumption) H Hst).
-      pose proof (@inv_e k d g st c Hst) as Hn.
-      destruct (eval k P d g st c) as [[w0| | | | | | |] g0 st0]; simpl in Hn; try reflexivity.
-      rewrite truthy_eq. destruct (truthy P w0) as [[]|]; try reflexivity; apply (IHe S Dm x); auto.
+
     + (* EWhile *)
       rewrite (IHe S Dm x d d' g st c ltac:(assumption) H Hst).
       pose proof (@inv_e k d g st c Hst) as Hn.

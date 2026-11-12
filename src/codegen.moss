@@ -5213,14 +5213,15 @@ assume Std {
     }
 
     fn emit_if_as(body: IntList, e: Int, m: Int, want: Int): Int {
-      emit_expr(body, ast::a_of(e), m);
+      # A Bool match lowers to a Wasm conditional on its discriminant.
+      emit_as(body, ast::a_of(e), m, cg_boolty.read());
       cg_depth.write(cg_depth.read() + 1);
       let then = int_list();
       let ty = emit_as(then, ast::b_of(e), m, want);
       if !ast::is_some(ast::c_of(e)) {
         op_if_ty(body, ty);
         push_bytes(body, then);
-        if width(ty) > 0 {
+        if !types::fits(ty, ty_none()) {
           # An `if` that yields a value has to have an `else` to yield it.
           cg_error(c_bad_type(), ast::none());
         } else if ast::is_some(want) {

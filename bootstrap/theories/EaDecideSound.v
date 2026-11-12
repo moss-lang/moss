@@ -1,10 +1,11 @@
 (* The executable branch checks follow Audit's expected-type and join rules. *)
-From Stdlib Require Import Bool Arith Lia.
+From Stdlib Require Import Bool Arith Lia String.
 From NM Require AuditBase.
-From NM Require Import Audit EaBase EaDecide EaExpr EaControlSound EaChecked.
+From NM Require Import Audit EaBase EaDecide EaExpr EaControlSound EaChecked EaTypesSound.
 From NM Require Import LegacyBodyJudgments.
 From NM Require PublicTypeFacts.
 Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
+Local Open Scope string_scope.
 
 Theorem opt_fitsb_exact : forall actual expected,
   opt_fitsb actual expected = true <-> opt_fits actual expected.
@@ -44,6 +45,20 @@ Variable post : est -> Prop.
 Local Notation Expr := (ExPostAt E P valid post R).
 Local Notation Block := (BlkEPostAt E P valid post R).
 
+Local Lemma conditional_tags_sound : forall before bool_tag true_tag false_tag after,
+  pure (conditional_tags E) before = Ok ((bool_tag, true_tag, false_tag), after) ->
+  BooleanTags W bool_tag true_tag false_tag /\ before = after.
+Proof.
+  intros before bool_tag true_tag false_tag after Run.
+  unfold conditional_tags in Run. fold W in Run.
+  destruct (EaTypes.lang_sym W "bool" NSName "Bool") eqn:Bool;
+  destruct (EaTypes.lang_sym W "bool" NSName "True") eqn:True;
+  destruct (EaTypes.lang_sym W "bool" NSName "False") eqn:False;
+    cbn [rbind pure] in Run; try discriminate.
+  injection Run as <- <- <- <-. split; [|reflexivity].
+  repeat split; now apply lang_sym_sound.
+Qed.
+
 Theorem if_post_sound : forall n,
   (forall depth, depth < n -> Expr depth) ->
   (forall depth, depth < n -> Block depth) ->
@@ -62,6 +77,8 @@ Proof.
   - apply mbind_ok in Run as [[ex' et] [joined [Else Run]]].
     destruct (opt_fitsb et expected) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
     apply mbind_ok in Run as [ty [final [Joined Run]]].
+    apply mbind_ok in Run as ([[bool_tag true_tag] false_tag] & finish & Tags & Run).
+    apply conditional_tags_sound in Tags as [Tags <-].
     unfold ret in Run. injection Run as <- <- <-.
     destruct (join_m_sound E _ _ _ _ _ _ Joined) as [JoinTyped <-].
     destruct (branch_post_sound E R P valid post n ltac:(intros depth Less; apply Expressions; lia)
@@ -70,15 +87,17 @@ Proof.
     destruct (TypedCondition Valid (BackwardThen (Backward Post))) as [Middle ConditionTyped].
     destruct (TypedThen Middle (Backward Post)) as [Next ThenTyped].
     destruct (TypedElse Next Post) as [Final ElseTyped].
-    split; [exact Final|eapply ExIfElse; [exact ConditionTyped|exact ThenTyped|exact ElseTyped|
+    split; [exact Final|eapply ExIfElse; [exact Tags|exact ConditionTyped|exact ThenTyped|exact ElseTyped|
       now apply opt_fitsb_exact|exact JoinTyped]].
   - destruct (opt_fitsb TUnit expected) eqn:Fits; cbn [mbind ret] in Run; [|discriminate].
     destruct (ty_eqb bt TUnit || ty_eqb bt never) eqn:BranchType; cbn [mbind ret] in Run; [|discriminate].
+    apply mbind_ok in Run as ([[bool_tag true_tag] false_tag] & finish & Tags & Run).
+    apply conditional_tags_sound in Tags as [Tags <-].
     injection Run as <- <- <-.
     split; [intros Post; now apply Earlier, BackwardThen|]. intros Valid Post.
     destruct (TypedCondition Valid (BackwardThen Post)) as [Middle ConditionTyped].
     destruct (TypedThen Middle Post) as [Final ThenTyped].
-    split; [exact Final|eapply ExIfThen; [exact ConditionTyped|exact ThenTyped|now apply opt_fitsb_exact|]].
+    split; [exact Final|eapply ExIfThen; [exact Tags|exact ConditionTyped|exact ThenTyped|now apply opt_fitsb_exact|]].
     apply orb_true_iff in BranchType as [Unit|Never]; [left|right]; now apply PublicTypeFacts.ty_eqb_spec.
 Qed.
 End ConditionalPost.

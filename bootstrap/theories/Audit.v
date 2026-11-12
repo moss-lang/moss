@@ -1474,7 +1474,6 @@ Inductive expr : Type :=
 | EBind                : binding -> expr -> expr
 | ESeq                 : expr -> expr -> expr
 | EAssign              : var -> expr -> expr
-| EIf                  : expr -> expr -> expr -> expr
 | EWhile               : expr -> expr -> expr
 | ELoop                : expr -> expr
 | EReturn              : expr -> expr
@@ -1495,6 +1494,13 @@ with binding : Type :=
    key for each position of F's declared result *)
 | BApply               : usym -> subst -> list (tsym * tsym) -> smap -> list item -> binding
 | BPrimitive           : item -> op -> binding.
+
+(* A conditional tests the payload of a checked Bool. The inner match's
+   binding is scoped to its scrutinee result, before either branch runs. *)
+Definition conditional_expression (slot bool_tag true_tag false_tag : nat)
+    (condition yes no : expr) : expr :=
+  EMatch (EMatch condition [(PHead bool_tag (Some slot) [], EVar slot)])
+    [(PHead true_tag None [], yes); (PHead false_tag None [], no)].
 
 (* Named builders are notation for the single binding form. *)
 Definition apply_expression u arguments inputs results body := EBind (BApply u arguments [] inputs results) body.
@@ -2013,16 +2019,6 @@ Fixpoint eval (fuel : nat) (P : program_view) (d : environment) (g : locals) (st
               match assign_local x w g1 with
               | Some g2 => Evaluation (Normal VUnit) g2 st1
               | None => Evaluation (Stuck e_assign) g1 st1
-              end
-          | r => r
-          end
-      | EIf c e1 e2 =>
-          match eval k P d g st c with
-          | Evaluation (Normal w) g1 st1 =>
-              match truthy P w with
-              | Some true => eval k P d g1 st1 e1
-              | Some false => eval k P d g1 st1 e2
-              | None => Evaluation (Stuck e_bool) g1 st1
               end
           | r => r
           end
@@ -2620,6 +2616,13 @@ Definition lang_item_key (i : lang_item) : string * nspace * name :=
   end.
 Definition LangItem (W : world) (i : lang_item) (s : nat) : Prop :=
   let '(short, ns, n) := lang_item_key i in LangSym W short ns n s.
+
+Definition BooleanTags (W : world) (bool_tag true_tag false_tag : nat) : Prop :=
+  LangItem W LIBool bool_tag /\ LangItem W LITrue true_tag /\ LangItem W LIFalse false_tag.
+
+(* A name the lexer cannot produce. Its binding is scoped inside the
+   scrutinee, so its slot cannot shadow a local in either branch. *)
+Definition conditional_payload_name : name := "%condition".
 
 (* ======================================================================== *)
 (* V.2 Types                                                                 *)
@@ -5220,7 +5223,6 @@ Inductive expression_plan : Type :=
 | PlanThis
 | PlanLocal (n : name)
 | PlanBlock (body : block_plan)
-| PlanIf (condition : expression_plan) (then_body : block_plan) (otherwise : option expression_plan)
 | PlanReturnUnit
 | PlanReturn (result : expression_plan)
 | PlanBreak
@@ -5313,6 +5315,17 @@ Definition FamilyBindPlans (W : world) (plans : list binding_plan) : Prop :=
 Definition closure_arguments (C formal : cx) : subst :=
   map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty formal).
 
+(* Checking a conditional produces the same plans as two ordinary matches.
+   The condition is checked at Bool before the inner match unpacks it. *)
+Definition conditional_plan (bool_tag true_tag false_tag : nat)
+    (condition : expression_plan) (then_body : block_plan)
+    (otherwise : option expression_plan) : expression_plan :=
+  let name := conditional_payload_name in
+  let payload := TUnion [TNom false_tag []; TNom true_tag []] in
+  PlanMatch (PlanMatch condition [(PatternPayload bool_tag name payload, PlanLocal name)])
+    [(PatternNominal true_tag, PlanBlock then_body);
+     (PatternNominal false_tag, match otherwise with Some plan => plan | None => PlanUnit end)].
+
 Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expression_plan -> ty -> Prop :=
 | TypesUnit : forall F C exp, TypesExpr W F C AEUnit exp PlanUnit TUnit
 | TypesThis : forall F C exp t, fr_this F = Some t -> TypesExpr W F C AEThis exp PlanThis t
@@ -5322,14 +5335,16 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
 | TypesBlock : forall F C exp b plan t,
     TypesBlkE W F C b exp plan t ->
     TypesExpr W F C (AEBlock b) exp (PlanBlock plan) (match exp with Some e => e | None => t end)
-| TypesIfThen : forall F C exp c b cp bp bt,
+| TypesIfThen : forall F C exp c b cp bp bt bool_tag true_tag false_tag,
+    BooleanTags W bool_tag true_tag false_tag ->
     TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
     opt_fits TUnit exp -> (bt = TUnit \/ bt = never) ->
-    TypesExpr W F C (AEIf c b None) exp (PlanIf cp bp None) TUnit
-| TypesIfElse : forall F C exp c b e cp bp bt ep et t,
+    TypesExpr W F C (AEIf c b None) exp (conditional_plan bool_tag true_tag false_tag cp bp None) TUnit
+| TypesIfElse : forall F C exp c b e cp bp bt ep et t bool_tag true_tag false_tag,
+    BooleanTags W bool_tag true_tag false_tag ->
     TypesCond W F C c cp -> TypesBlkE W F C b exp bp bt ->
     TypesBranch W F C e exp ep et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
-    TypesExpr W F C (AEIf c b (Some e)) exp (PlanIf cp bp (Some ep)) t
+    TypesExpr W F C (AEIf c b (Some e)) exp (conditional_plan bool_tag true_tag false_tag cp bp (Some ep)) t
 | TypesReturnUnit : forall F C exp, fr_ret F = Some TUnit ->
     TypesExpr W F C (AEReturn None) exp PlanReturnUnit never
 | TypesReturn : forall F C exp e expected plan actual,
@@ -5904,14 +5919,6 @@ Fixpoint emit_expr (resolve : nat -> nat) (slots : list (name * nat)) (C : cx)
   | PlanThis => emit_only (EVar 0)
   | PlanLocal n => emit_only (EVar (local_number slots n))
   | PlanBlock body => emit_block resolve slots C body
-  | PlanIf condition body other =>
-      let otherwise := match other with
-        | Some plan => emit_expr resolve slots C plan
-        | None => emit_only EUnit
-        end in
-      emit_pair (fun '(test, yes) no => EIf test yes no)
-        (emit_pair pair (emit_expr resolve slots C condition) (emit_block resolve slots C body))
-        otherwise
   | PlanReturnUnit => emit_only (EReturn EUnit)
   | PlanReturn result => emit_map EReturn (emit_expr resolve slots C result)
   | PlanBreak => emit_only EBreak
@@ -6100,7 +6107,6 @@ Fixpoint expression_primitives (expression : expr) : list op :=
   | ECall _ _ _ args | EInvoke _ args => flat_map expression_primitives args
   | EMethod receiver _ _ args => expression_primitives receiver ++ flat_map expression_primitives args
   | ELet _ a b | ESeq a b | EWhile a b => expression_primitives a ++ expression_primitives b
-  | EIf a b c => expression_primitives a ++ expression_primitives b ++ expression_primitives c
   | ERecord fields => flat_map (fun field => expression_primitives (snd field)) fields
   | EMatch e arms => expression_primitives e ++ flat_map (fun arm => expression_primitives (snd arm)) arms
   end

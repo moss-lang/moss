@@ -213,14 +213,18 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
 | ExLit : forall F C exp text x t,
     NumericText text -> Literal W C (literal_tree_of text) x t ->
     Ex W P F C (AELit text) exp x t
-| ExIfThen : forall F C exp c b cx' bx bt,
+| ExIfThen : forall F C exp c b cx' bx bt bool_tag true_tag false_tag,
+    BooleanTags W bool_tag true_tag false_tag ->
     Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
     opt_fits TUnit exp -> (bt = TUnit \/ bt = never) ->
-    Ex W P F C (AEIf c b None) exp (EIf cx' bx EUnit) TUnit
-| ExIfElse : forall F C exp c b y cx' bx bt ex' et t,
+    Ex W P F C (AEIf c b None) exp
+      (conditional_expression (var_of F conditional_payload_name) bool_tag true_tag false_tag cx' bx EUnit) TUnit
+| ExIfElse : forall F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag,
+    BooleanTags W bool_tag true_tag false_tag ->
     Cond W P F C c cx' -> BlkE W P F C b exp bx bt ->
     Branch W P F C y exp ex' et -> opt_fits et exp -> Join (branch_ty b bt) et exp t ->
-    Ex W P F C (AEIf c b (Some y)) exp (EIf cx' bx ex') t
+    Ex W P F C (AEIf c b (Some y)) exp
+      (conditional_expression (var_of F conditional_payload_name) bool_tag true_tag false_tag cx' bx ex') t
 | ExMatch : forall F C exp s arms sx st xarms t,
     Ex W P F C s None sx st ->
     Arms W P F C (canon C st) arms exp xarms t ->

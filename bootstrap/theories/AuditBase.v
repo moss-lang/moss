@@ -747,7 +747,6 @@ Fixpoint expr_sites (e : expr) : list code_site :=
   | EMethod e0 _ _ args => expr_sites e0 ++ many args
   | ELet _ e1 e2 | ESeq e1 e2 | EWhile e1 e2 => expr_sites e1 ++ expr_sites e2
   | EBind b e1 => binding_sites b ++ expr_sites e1
-  | EIf c e1 e2 => expr_sites c ++ expr_sites e1 ++ expr_sites e2
   | ERecord fs => (fix go (l : list (fld * expr)) :=
       match l with [] => [] | (_, x) :: r => expr_sites x ++ go r end) fs
   | EMatch e0 arms => expr_sites e0 ++ (fix go (l : list (pattern * expr)) :=
@@ -943,9 +942,6 @@ Local Fixpoint explicit_reference_expr (machines : list (tsym * machine_class))
   | ECall _ _ _ args | EInvoke _ args => forallb (explicit_reference_expr machines handles) args
   | EMethod receiver _ _ args =>
       explicit_reference_expr machines handles receiver && forallb (explicit_reference_expr machines handles) args
-  | EIf c t f =>
-      explicit_reference_expr machines handles c && explicit_reference_expr machines handles t &&
-      explicit_reference_expr machines handles f
   | ERecord fields => forallb (fun field => explicit_reference_expr machines handles (snd field)) fields
   | EMatch scrutinee arms =>
       explicit_reference_expr machines handles scrutinee &&

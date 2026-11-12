@@ -576,16 +576,6 @@ Fixpoint leval (fuel : nat) (P : program_view) (d : lenv) (g : locals) (st : mst
               end
           | r => r
           end
-      | EIf c e1 e2 =>
-          match leval k P d g st c with
-          | I.Evaluation (Normal w) g1 st1 =>
-              match I.truthy P w with
-              | Some true => leval k P d g1 st1 e1
-              | Some false => leval k P d g1 st1 e2
-              | None => I.Evaluation (Stuck I.e_bool) g1 st1
-              end
-          | r => r
-          end
       | EWhile c b =>
           match leval k P d g st c with
           | I.Evaluation (Normal w) g1 st1 =>

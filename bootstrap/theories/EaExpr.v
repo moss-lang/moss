@@ -217,6 +217,12 @@ Definition emit_defined_call (symbol : nat) (call : prepared_call) (args : list 
    args_ .. -> Args; cond -> Cond; branch -> Branch; arms -> Arms;
    arms_list -> ArmsList; meth_call -> MethCall; provided -> Provided;
    blke -> BlkE; blk -> Blk. *)
+Definition conditional_tags : er (nat * nat * nat) :=
+  let! bool_tag := ropt (lang_sym W "bool" NSName "Bool") "the library's Bool is unavailable" in
+  let! true_tag := ropt (lang_sym W "bool" NSName "True") "the library's True is unavailable" in
+  let! false_tag := ropt (lang_sym W "bool" NSName "False") "the library's False is unavailable" in
+  Ok (bool_tag, true_tag, false_tag).
+
 Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct n} : M (expr * ty) :=
   match n with
   | 0 => fail "expression: too deep"
@@ -305,7 +311,8 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       let* _ := check (opt_fitsb TUnit exp) "an `if` without `else` yields `()`" in
       let* _ := check (ty_eqb bt TUnit || ty_eqb bt never)
                  ("an `if` without `else` yields `()`, but its branch yields " ++ qty W bt) in
-      ret (EIf cx' bx EUnit, TUnit)
+      let* (bool_tag, true_tag, false_tag) := pure conditional_tags in
+      ret (conditional_expression (var_of F conditional_payload_name) bool_tag true_tag false_tag cx' bx EUnit, TUnit)
   | AEIf c b (Some y) =>
       let* cx' := cond n' F C c in
       let* (bx, bt) := blke n' F C b exp in
@@ -313,7 +320,8 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       let* _ := check (opt_fitsb et exp)
                  ("the `else` branch yields " ++ qty W et ++ match exp with Some x => ", expected " ++ qty W x | None => "" end) in
       let* t := join_m (branch_ty b bt) et exp in
-      ret (EIf cx' bx ex', t)
+      let* (bool_tag, true_tag, false_tag) := pure conditional_tags in
+      ret (conditional_expression (var_of F conditional_payload_name) bool_tag true_tag false_tag cx' bx ex', t)
   | AEMatch s arms0 =>
       let* (sx, st) := ex n' F C s None in
       let* (xarms, t) := arms n' F C (canon C st) arms0 exp in

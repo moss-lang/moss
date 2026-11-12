@@ -154,8 +154,8 @@ Proof.
       |F C exp op object lib name method ox ot code t Operator Language Object Head Provided
       |F C exp op left right lib name method ox ot code t Operator Language Object Head Provided
       |F C exp text code t Numeric Literal
-      |F C exp condition then_body cx bx bt Condition Then Fits BranchType
-      |F C exp condition then_body other cx bx bt ox ot t Condition Then Else Fits Join
+      |F C exp condition then_body cx bx bt bool_tag true_tag false_tag Tags Condition Then Fits BranchType
+      |F C exp condition then_body other cx bx bt ox ot t bool_tag true_tag false_tag Tags Condition Then Else Fits Join
       |F C exp object arms value st results t Object Arms
       |F C exp body code t Block
       |F C exp Ret
@@ -198,11 +198,11 @@ Proof.
       exists (PlanNumeric plan). split; [eapply TypesNumeric; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_condition _ _ _ _ Condition) as (condition_plan & CondTyped & <- & ?Placed).
       destruct (read_block_expression _ _ _ _ _ _ Then) as (then_plan & ThenTyped & <- & ?Placed).
-      exists (PlanIf condition_plan then_plan None). split; [eapply TypesIfThen; eassumption|split; [reflexivity|finish_placements]].
+      exists (conditional_plan bool_tag true_tag false_tag condition_plan then_plan None). split; [eapply TypesIfThen; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_condition _ _ _ _ Condition) as (condition_plan & CondTyped & <- & ?Placed).
       destruct (read_block_expression _ _ _ _ _ _ Then) as (then_plan & ThenTyped & <- & ?Placed).
       destruct (read_branch _ _ _ _ _ _ Else) as (else_plan & ElseTyped & <- & ?Placed).
-      exists (PlanIf condition_plan then_plan (Some else_plan)).
+      exists (conditional_plan bool_tag true_tag false_tag condition_plan then_plan (Some else_plan)).
       split; [eapply TypesIfElse; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_expression _ _ _ _ _ _ Object) as (object_plan & ObjectTyped & <- & ?Placed).
       destruct (read_arms _ _ _ _ _ _ _ Arms) as (arms_plan & ArmsTyped & <- & ?Placed).

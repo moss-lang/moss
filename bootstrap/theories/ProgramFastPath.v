@@ -72,7 +72,6 @@ Fixpoint uses (e : expr) : list item :=
   | EMethod e0 _ it args => it :: uses e0 ++ flat_map uses args
   | ELet _ a b | ESeq a b | EWhile a b => uses a ++ uses b
   | EBind b e1 => buses b ++ uses e1
-  | EIf a b c => uses a ++ uses b ++ uses c
   | ERecord fs => flat_map (fun p => uses (snd p)) fs
   | EMatch e0 arms => uses e0 ++ flat_map (fun p => uses (snd p)) arms
   end
@@ -144,7 +143,6 @@ Fixpoint ok_e (e : expr) : bool :=
   | EMethod e0 _ _ args => ok_e e0 && forallb ok_e args
   | ELet _ a b | ESeq a b | EWhile a b => ok_e a && ok_e b
   | EBind b e1 => ok_b b && ok_e e1
-  | EIf a b c => ok_e a && ok_e b && ok_e c
   | ERecord fs => forallb (fun p => ok_e (snd p)) fs
   | EMatch e0 arms => ok_e e0 && forallb (fun p => ok_e (snd p)) arms
   end
@@ -266,7 +264,6 @@ Fixpoint fp_e (e : expr) : expr :=
       end
   | ESeq e1 e2 => ESeq (fp_e e1) (fp_e e2)
   | EAssign x e1 => EAssign x (fp_e e1)
-  | EIf c e1 e2 => EIf (fp_e c) (fp_e e1) (fp_e e2)
   | EWhile c b => EWhile (fp_e c) (fp_e b)
   | ELoop b => ELoop (fp_e b)
   | EReturn e1 => EReturn (fp_e e1)
@@ -1251,7 +1248,7 @@ Proof.
   split; [|split; [|split]].
   - intros W d d' g st e Hc Hl Hd Hst.
     destruct e as [x| |v|n th e1|f th sm args|f args|e0 m it args|x e1 e2|bd e1|e1 e2|x e1
-                  |c e1 e2|c e1|e1|e1| |fs|e1 fl|e0 arms];
+                  |c e1|e1|e1| |fs|e1 fl|e0 arms];
       cbn [ok_e] in Hc; andb_split; cbn [uses] in Hl; lks.
     + (* EVar *) err.
     + (* EUnit *) err.
@@ -1380,19 +1377,6 @@ Proof.
     + (* EAssign *)
       red1.
       destruct (IHe W d d' g st e1 Hc ltac:(eassumption) Hd Hst) as [Hs|[k1 Hk1]]; [bk|err].
-    + (* EIf *)
-      red1.
-      destruct (IHe W d d' g st c ltac:(eassumption) ltac:(eassumption) Hd Hst) as [Hs|[k0 Hk0]]; [bk|].
-      pose proof (inv_e P Hok k d g st c Hst) as Hn.
-      destruct (eval k P d g st c) as [[w0| | | | | | |] g0 st0]; simpl in Hn; try err.
-      destruct (truthy P w0) as [[]|] eqn:Et.
-      * destruct (IHe W d d' g0 st0 e1 ltac:(eassumption) ltac:(eassumption) Hd Hn) as [Hs|[k1 Hk1]];
-          [left; exact Hs|].
-        right. evgo. rewrite truthy_eq, Et. rwall. reflexivity.
-      * destruct (IHe W d d' g0 st0 e2 ltac:(eassumption) ltac:(eassumption) Hd Hn) as [Hs|[k1 Hk1]];
-          [left; exact Hs|].
-        right. evgo. rewrite truthy_eq, Et. rwall. reflexivity.
-      * right. evgo. rewrite truthy_eq, Et. reflexivity.
     + (* EWhile *)
       red1.
       destruct (IHe W d d' g st c ltac:(eassumption) ltac:(eassumption) Hd Hst) as [Hs|[k0 Hk0]]; [bk|].
@@ -1663,7 +1647,7 @@ Proof.
   split; [|split; [|split]].
   - intros W d d' g st e Hc Hl Hd Hst.
     destruct e as [x| |v|n th e1|f th sm args|f args|e0 m it args|x e1 e2|bd e1|e1 e2|x e1
-                  |c e1 e2|c e1|e1|e1| |fs|e1 fl|e0 arms];
+                  |c e1|e1|e1| |fs|e1 fl|e0 arms];
       cbn [ok_e] in Hc; andb_split; cbn [uses] in Hl; lks.
     + (* EVar *) errB.
     + (* EUnit *) errB.
@@ -1807,22 +1791,6 @@ Proof.
     + (* EAssign *)
       red1.
       destruct (IHe W d d' g st e1 Hc ltac:(eassumption) Hd Hst) as [Hs|[[ks Hs]|[k1 Hk1]]]; [ofB|skB|errB].
-    + (* EIf *)
-      red1.
-      destruct (IHe W d d' g st c ltac:(eassumption) ltac:(eassumption) Hd Hst)
-        as [Hs|[[ks Hs]|[k0 Hk0]]]; [ofB|skB|].
-      pose proof (inv_e P' Hok' k d' g st (T c) Hst) as Hn.
-      destruct (eval k P' d' g st (T c)) as [[w0| | | | | | |] g0 st0]; simpl in Hn; try errB.
-      rewrite truthy_eq. destruct (truthy P w0) as [[]|] eqn:Et.
-      * destruct (IHe W d d' g0 st0 e1 ltac:(eassumption) ltac:(eassumption) Hd Hn)
-          as [Hs|[[ks Hs]|[k1 Hk1]]]; [left; exact Hs| |].
-        -- right. left. evgo. rewrite Et. rwall. apply Hs. lia.
-        -- right. right. evgo. rewrite Et. rwall. reflexivity.
-      * destruct (IHe W d d' g0 st0 e2 ltac:(eassumption) ltac:(eassumption) Hd Hn)
-          as [Hs|[[ks Hs]|[k1 Hk1]]]; [left; exact Hs| |].
-        -- right. left. evgo. rewrite Et. rwall. apply Hs. lia.
-        -- right. right. evgo. rewrite Et. rwall. reflexivity.
-      * right. right. evgo. rewrite Et. reflexivity.
     + (* EWhile *)
       red1.
       destruct (IHe W d d' g st c ltac:(eassumption) ltac:(eassumption) Hd Hst)

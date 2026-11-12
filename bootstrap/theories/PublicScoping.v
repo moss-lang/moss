@@ -1294,7 +1294,7 @@ Proof.
                   |F C exp pa args f Cf ns th g xs wrap C' R K Def Ctx Dm Needs CT Sig As
                   |F C exp pa args f g xs R K Abs L As|F C exp pa bs args f x t R K Br Dx|F C exp o pa args ox ot x t Eo Mc
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv
-                  |F C exp text x t Nt Lt|F C exp c b cx' bx bt Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t Cd Bb Br Of J
+                  |F C exp text x t Nt Lt|F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
                   |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
                   |F C exp o n ox ot rec t Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];

@@ -313,7 +313,8 @@ Theorem body_translation_agrees : forall W P resolve,
 Proof.
   intros W P resolve. apply body_typing_ind; intros; unfold CheckedEmission in *;
     cbn [expression_emission block_emission argument_emission record_fields_emission
-      arms_emission bind_items_emission bind_item_emission emit_expr emit_block emit_bind_item
+      arms_emission bind_items_emission bind_item_emission conditional_plan conditional_expression
+      pattern_scope pattern_bindings emit_pattern emit_expr emit_block emit_bind_item
       emit_only emit_map emit_pair emit_each emit_flat require_placement emitted_code emitted_placements
       emit_lambda_binding lambda_binding_placements linked_binding_placements
       splice_bindings fold_right map flat_map app] in *;

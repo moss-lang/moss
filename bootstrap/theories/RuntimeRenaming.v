@@ -98,7 +98,6 @@ Fixpoint rename_expr (e : expr) : expr :=
   | EBind b body => EBind (rename_binding b) (rename_expr body)
   | ESeq first second => ESeq (rename_expr first) (rename_expr second)
   | EAssign x value => EAssign x (rename_expr value)
-  | EIf cond yes no => EIf (rename_expr cond) (rename_expr yes) (rename_expr no)
   | EWhile cond body => EWhile (rename_expr cond) (rename_expr body)
   | ELoop body => ELoop (rename_expr body)
   | EReturn value => EReturn (rename_expr value)

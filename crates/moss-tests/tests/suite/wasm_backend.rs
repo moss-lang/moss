@@ -58,6 +58,41 @@ fn arithmetic_and_loops() {
     assert_eq!(run(&entry, &[]), "wwwy\n");
 }
 
+#[test]
+fn if_match_preserves_receiver_and_evaluates_condition_once() {
+    let entry = whole(
+        r"tag True;
+tag False;
+assume Std {
+  tag Box(Char);
+  fn Box.pick(c: Bool): Char {
+    if c { match this { Box(value) => value } } else if false { char::n } else { char::b }
+  }
+  fn main() {
+    var calls = zero;
+    let b = Box(char::a);
+    putchar(b.pick(({ calls = calls.add(one); true })));
+    if calls.eq(one) { putchar(b.pick(false)); }
+    putchar(char::newline);
+  }
+}
+",
+    );
+    agree(&entry, &[], "ab\n");
+}
+
+#[test]
+fn if_requires_bool_and_unit_for_an_omitted_else() {
+    for text in [
+        "fn main() { if () {} }",
+        "tag Empty(()); fn main() { if true { Empty(()) }; }",
+    ] {
+        let entry = source(text);
+        rejects(&entry);
+        oracle_rejects(&entry);
+    }
+}
+
 /// D67: `Std` has a `Float`, an f64 under `WasiStd`, and the compiled
 /// program gets the same answers as the oracle. A function taking and
 /// returning a `Float` is compiled with f64 parameters and results.

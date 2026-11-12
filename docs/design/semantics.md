@@ -1054,37 +1054,25 @@ instantiations — arguably a feature); a context that lists a shared type
 concrete `IntList` as the native backing store that per-receiver list
 wrappers delegate to.
 
-**[D45] DECIDED (nominal `Bool` as a lang item; revised).** Confirmed by
-the designer as the easiest way for `if` to work, then refined by them to
-kill the [D47] wrinkle: `Bool` is *nominal over* the sum
-(`tag Bool(False | True);` — the tag-with-union-payload form), so methods
-can attach to it (`Std` provides `Bool.not`). Construction is
-`Bool(True)`, but nobody writes that: the prelude defines
-`val true: Bool = Bool(True);` and `false` likewise ([D50]), which also
-makes `var b = true;` infer `Bool` with no annotation. `if c { a } else
-{ b }` requires `c : Bool` and eliminates it; matching *through* `Bool` to
-`True`/`False` needs nested patterns, which the bootstrap doesn't support
-yet — use `if`. The old
-`lib/bool.moss` made even booleans contextual (`type Bool;` with abstract
-`val true`/`val false`). The bootstrap diverges: `lib/bool.moss` now
-declares concrete units and a transparent alias —
+**[D45] DECIDED (nominal `Bool` and conditionals).** The standard library
+declares `tag Bool(False | True);`. Its nominal head allows methods to
+attach to `Bool`. The prelude defines `val true: Bool = Bool(True);` and
+`false` likewise ([D50]).
+
+An `if c { a } else { b }` checks `c` at the library's `Bool` and expands
+into two matches.
 
 ```moss
-tag False;
-tag True;
-
-type Bool = False | True;
+match (match c { Bool(bit) => bit }) {
+  True => { a },
+  False => { b },
+}
 ```
 
-— because the elaborator must *eliminate* a boolean at every `if`, and with
-an abstract `Bool` the meaning of `if` itself would depend on context. With
-units, `if c { a } else { b }` is exactly
-`match c { True => { a } False => { b } }` and needs no new machinery.
-`False`/`True` are lang items the compiler knows by (module, name), like
-the future `ops` symbols ([D33]). Interaction to resolve when operators
-land: `lib/ops.moss` says `assume Bool { ... }`, which is vacuous once
-`Bool` is a concrete alias — those assumes would just drop. If the designer
-wants contextual booleans back, `if` needs a story first.
+The expansion uses the library's tag identities and a fresh payload
+binder. With no `else`, the `False` arm is `()` and the then branch must
+have type `()` or bottom. The Wasm compiler emits a conditional on the
+Boolean discriminant.
 
 **[D34] DECIDED (match).**
 

@@ -155,6 +155,35 @@ Fixpoint select_carm (arms : list (pattern * code)) (w : value) : option (locals
       end
   end.
 
+(* A match that only reads its payload needs no temporary local. *)
+Definition payload_arm (arms : list (pattern * expr)) : option nsym :=
+  match arms with
+  | [(PHead tag (Some slot) [], EVar x)] =>
+      if Nat.eqb x slot then Some tag else None
+  | _ => None
+  end.
+
+Definition cproject (tag : nsym) (scrutinee : code) : code :=
+  fun m d g st =>
+    match m with
+    | 0 => I.Evaluation OutOfFuel g st
+    | S k =>
+        match scrutinee k d g st with
+        | I.Evaluation (Normal w) g' st' =>
+            match w with
+            | VTag actual payload =>
+                if Nat.eqb tag actual then
+                  match k with
+                  | 0 => I.Evaluation OutOfFuel g' st'
+                  | S _ => I.Evaluation (Normal payload) g' st'
+                  end
+                else I.Evaluation (Stuck I.e_pat) g' st'
+            | _ => I.Evaluation (Stuck I.e_pat) g' st'
+            end
+        | r => r
+        end
+    end.
+
 Definition bnil : bcode := fun m d g st =>
   match m with 0 => inr (I.Evaluation OutOfFuel g st) | S _ => inl (d, g, st) end.
 
@@ -649,20 +678,6 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | r => r
           end
       end
-  | EIf c e1 e2 => let cc0 := cc c in let c1 := cc e1 in let c2 := cc e2 in fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match cc0 k d g st with
-          | I.Evaluation (Normal w) g1 st1 =>
-              match I.truthy P w with
-              | Some true => c1 k d g1 st1
-              | Some false => c2 k d g1 st1
-              | None => I.Evaluation (Stuck I.e_bool) g1 st1
-              end
-          | r => r
-          end
-      end
   | EWhile c b => let cc0 := cc c in let cb := cc b in
       fix loop (m : nat) (d : fenv) (g : locals) (st : mstate) {struct m} : I.evaluation :=
       match m with
@@ -727,17 +742,22 @@ Fixpoint cc (e : expr) {struct e} : code :=
           | r => r
           end
       end
-  | EMatch e0 arms => let c0 := cc e0 in let carms := cc_arms cc arms in fun m d g st =>
-      match m with
-      | 0 => I.Evaluation OutOfFuel g st
-      | S k =>
-          match c0 k d g st with
-          | I.Evaluation (Normal w) g1 st1 =>
-              match select_carm carms w with
-              | Some (bs, cb) => I.popn (List.length bs) (cb k d (bs ++ g1) st1)
-              | None => I.Evaluation (Stuck I.e_pat) g1 st1
+  | EMatch e0 arms =>
+      let c0 := cc e0 in
+      match payload_arm arms with
+      | Some tag => cproject tag c0
+      | None => let carms := cc_arms cc arms in fun m d g st =>
+          match m with
+          | 0 => I.Evaluation OutOfFuel g st
+          | S k =>
+              match c0 k d g st with
+              | I.Evaluation (Normal w) g1 st1 =>
+                  match select_carm carms w with
+                  | Some (bs, cb) => I.popn (List.length bs) (cb k d (bs ++ g1) st1)
+                  | None => I.Evaluation (Stuck I.e_pat) g1 st1
+                  end
+              | r => r
               end
-          | r => r
           end
       end
   end.
@@ -790,6 +810,16 @@ Qed.
 Section Agreement.
 Variables (P : program_view) (tbl : fsym -> option code) (ftbl : usym -> option bcode).
 Hypothesis Tables : tbl_ok P tbl ftbl.
+
+Lemma payload_arm_inv : forall arms tag, payload_arm arms = Some tag ->
+  exists slot, arms = [(PHead tag (Some slot) [], EVar slot)].
+Proof.
+  intros [|[[b|n [slot|] [|field fields]] body] [|arm arms]] tag Eq;
+    try discriminate.
+  all: destruct body; cbn [payload_arm] in Eq; try discriminate.
+  destruct (Nat.eqb v slot) eqn:Same; [|discriminate].
+  apply Nat.eqb_eq in Same as ->. now injection Eq as ->; exists slot.
+Qed.
 
 Lemma select_carm_cc : forall arms w,
   select_carm (cc_arms (cc P tbl ftbl) arms) w =
@@ -1056,7 +1086,8 @@ Lemma agree_zero : agree 0.
 Proof.
   repeat split.
   - intros e d g st. destruct e; try reflexivity; try (destruct b; reflexivity).
-    apply fold_call_ok. reflexivity.
+    + apply fold_call_ok. reflexivity.
+    + cbn [cc]. destruct (payload_arm l); reflexivity.
   - intros l d g st. destruct l as [|e rest]; [reflexivity|].
     destruct e; reflexivity.
   - intros bs d g st. destruct bs as [|b bs]; [reflexivity|]. destruct b; reflexivity.
@@ -1104,8 +1135,6 @@ Proof.
       destruct k as [|[|k']]; cbn [F.feval_bindings]; try reflexivity. apply IHe.
     + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity. apply IHe.
     + rewrite IHe. reflexivity.
-    + rewrite IHe. destruct (F.feval k P d g st e1) as [[] g1 st1]; try reflexivity.
-      destruct (I.truthy P v) as [[]|]; try reflexivity; apply IHe.
     + (* while: the loop is the code of the same expression *)
       change ((fix loop (m : nat) (d0 : fenv) (g0 : locals) (st0 : mstate) {struct m} : I.evaluation :=
         match m with
@@ -1145,9 +1174,17 @@ Proof.
     + reflexivity.
     + rewrite IHl. reflexivity.
     + rewrite IHe. reflexivity.
-    + rewrite IHe. destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity.
-      rewrite select_carm_cc. destruct (I.select_arm l v) as [[bs eb]|]; cbn [option_map fst snd]; [|reflexivity].
-      rewrite IHe. reflexivity.
+    + destruct (payload_arm l) as [tag|] eqn:Projection.
+      * apply payload_arm_inv in Projection as [slot ->].
+        cbn [cproject]. rewrite IHe.
+        destruct (F.feval k P d g st e) as [[w| | | | | | |] g1 st1]; try reflexivity.
+        destruct w as [|actual payload| |]; cbn [I.select_arm I.match_pat]; try reflexivity.
+        destruct (Nat.eqb tag actual); [|reflexivity].
+        destruct k; cbn [F.feval I.popn skipn List.length app lookup_local];
+          try rewrite Nat.eqb_refl; reflexivity.
+      * rewrite IHe. destruct (F.feval k P d g st e) as [[] g1 st1]; try reflexivity.
+        rewrite select_carm_cc. destruct (I.select_arm l v) as [[bs eb]|]; cbn [option_map fst snd]; [|reflexivity].
+        rewrite IHe. reflexivity.
   - intros l d g st. destruct l as [|e1 r]; cbn [cc_list F.feval_arguments]; [reflexivity|].
     destruct e1; cbn [cc_list]; try match goal with
     | |- context [cc P tbl ftbl ?e k d g st] =>

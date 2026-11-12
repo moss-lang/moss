@@ -5391,6 +5391,67 @@ Proof.
   intros t B x Av Safe. rewrite Ew. exact (chain_wrap (S k) k n F C F' C' _ m bs Ch Le Le t B x Av Safe).
 Qed.
 
+Local Lemma match_step : forall k d g st scrutinee arms,
+  AR.O.I.eval (S k) P d g st (EMatch scrutinee arms) =
+  match AR.O.I.eval k P d g st scrutinee with
+  | AR.O.I.Evaluation (Normal w) g' st' =>
+      match AR.O.I.select_arm arms w with
+      | Some (bindings, body) =>
+          AR.O.I.popn (List.length bindings) (AR.O.I.eval k P d (bindings ++ g')%list st' body)
+      | None => AR.O.I.Evaluation (Stuck AR.O.I.e_pat) g' st'
+      end
+  | result => result
+  end.
+Proof. reflexivity. Qed.
+
+(* In the inner match only the payload read sees the temporary slot.
+   Match pops it before the outer match evaluates either branch. *)
+Local Lemma conditional_evaluation : forall k slot bool_tag true_tag false_tag condition yes no d g st,
+  AR.O.I.eval (S k) P d g st (conditional_expression slot bool_tag true_tag false_tag condition yes no) =
+  match AR.O.I.eval (Nat.pred k) P d g st condition with
+  | AR.O.I.Evaluation (Normal (VTag tag payload)) g' st' =>
+      if Nat.eqb bool_tag tag then
+        match AR.O.I.select_arm [(PHead true_tag None [], yes); (PHead false_tag None [], no)] payload with
+        | Some (bindings, body) =>
+            AR.O.I.popn (List.length bindings) (AR.O.I.eval k P d (bindings ++ g')%list st' body)
+        | None => AR.O.I.Evaluation (Stuck AR.O.I.e_pat) g' st'
+        end
+      else AR.O.I.Evaluation (Stuck AR.O.I.e_pat) g' st'
+  | AR.O.I.Evaluation (Normal _) g' st' => AR.O.I.Evaluation (Stuck AR.O.I.e_pat) g' st'
+  | result => result
+  end.
+Proof.
+  intros [|[|k]] slot bool_tag true_tag false_tag condition yes no d g st;
+    [reflexivity|reflexivity|].
+  unfold conditional_expression. rewrite (match_step (S (S k))), (match_step (S k)). cbn [Nat.pred].
+  destruct (AR.O.I.eval (S k) P d g st condition) as [[w| | | | | | |] g' st']; try reflexivity.
+  destruct w as [|tag payload| |]; cbn [AR.O.I.select_arm AR.O.I.match_pat]; try reflexivity.
+  destruct (Nat.eqb bool_tag tag); [|reflexivity].
+  cbn [AR.O.I.eval lookup_local List.length app AR.O.I.popn skipn].
+  try rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+Local Lemma conditional_popn : forall r, AR.O.I.popn 0 r = r.
+Proof. now intros []. Qed.
+
+Local Lemma conditional_value : forall H bool_tag true_tag false_tag w,
+  A.BooleanTags W bool_tag true_tag false_tag ->
+  value_typed W P H w (TNom bool_tag []) ->
+  true_tag <> false_tag /\
+  (w = VTag bool_tag (VTag true_tag VUnit) \/ w = VTag bool_tag (VTag false_tag VUnit)).
+Proof.
+  intros H bool_tag true_tag false_tag w [Bool [Truth Falsehood]] Typed.
+  destruct (bool_value_shape W P H bool_tag w (proj1 Bools) Bool Typed)
+    as [t [f [Truth' [Falsehood' Shape]]]].
+  pose proof (lang_sym_unique _ _ _ _ _ _ Truth Truth') as <-.
+  pose proof (lang_sym_unique _ _ _ _ _ _ Falsehood Falsehood') as <-.
+  split; [|exact Shape].
+  destruct (proj1 Bools _ Bool) as [t' [f' [Truth'' [Falsehood'' [_ [_ [_ [Distinct _]]]]]]]].
+  pose proof (lang_sym_unique _ _ _ _ _ _ Truth Truth'') as <-.
+  pose proof (lang_sym_unique _ _ _ _ _ _ Falsehood Falsehood'') as <-.
+  exact Distinct.
+Qed.
+
 Section Step.
 Variable k : nat.
 Hypothesis Bel : Below k.
@@ -5400,6 +5461,9 @@ Lemma sblk : SafeBlk k. Proof. exact (proj1 (proj2 (Bel k (le_n k)))). Qed.
 Lemma sblke : SafeBlkE k. Proof. exact (proj1 (proj2 (proj2 (Bel k (le_n k))))). Qed.
 Lemma sbranch : SafeBranch k. Proof. exact (proj1 (proj2 (proj2 (proj2 (Bel k (le_n k)))))). Qed.
 Lemma scond : SafeCond k. Proof. exact (proj2 (proj2 (proj2 (proj2 (Bel k (le_n k)))))). Qed.
+
+Local Lemma conditional_scrutinee : SafeCond (Nat.pred k).
+Proof. exact (proj2 (proj2 (proj2 (proj2 (Bel _ (Nat.le_pred_l k)))))). Qed.
 
 Lemma unit_k : forall F C d types H g st, Pre k F C d types H g st ->
   Outcome F d H types TUnit False (AR.O.I.eval k P d g st EUnit).
@@ -5634,8 +5698,8 @@ Proof.
       |F C exp op y lib n m ox ot x t Op Lang Dy Head Prov
       |F C exp op l r lib n m ox ot x t Op Lang Dl Head Prov
       |F C exp text x t Num Lit
-      |F C exp c b cx' bx bt Dc Db FitsU Bt
-      |F C exp c b y cx' bx bt ex' et t Dc Db Dy FitsE Join
+      |F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Dc Db FitsU Bt
+      |F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Dc Db Dy FitsE Join
       |F C exp sc arms sx st xarms t Ds Darms
       |F C exp b x t Db
       |F C exp Ret
@@ -5711,31 +5775,39 @@ Proof.
         [intro B0; apply A.BkBinL; exact B0|intros a' [<-|[]] B0; apply A.BkBinR; exact B0].
     + eapply AR.O.outcome_breaks; [|exact (lit_code k Bel F C _ x t Lit (S k) (le_n _) d types H lg lst Pre0)].
       intros [].
-    + (* if-then *) cbn [AR.O.I.eval].
-      destruct (scond F C c cx' Dc d types H lg lst (pre_lower Pre0)) as [bsym [Lang Out]].
+    + (* if-then *) rewrite conditional_evaluation.
+      destruct (conditional_scrutinee F C c cx' Dc d types H lg lst (pre_le _ _ _ _ _ _ _ _ _ (Nat.le_trans _ _ _ (Nat.le_pred_l k) (Nat.le_succ_diag_r k)) Pre0))
+        as [bsym [Lang Out]].
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b None B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
-      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Lang T1) as [bit Bit].
-      replace (AR.O.I.truthy P w) with (Some bit) by (symmetry; exact Bit).
-      destruct bit.
-      * apply (AR.O.outcome_fits W P state_ok _ _ _ _ bt).
+      pose proof (lang_sym_unique _ _ _ _ _ _ Lang (proj1 Tags)) as ->.
+      destruct (conditional_value _ _ _ _ _ Tags T1) as [Distinct [->| ->]];
+        cbn [AR.O.I.select_arm AR.O.I.match_pat]; rewrite !Nat.eqb_refl.
+      * cbn [List.length app]; rewrite conditional_popn.
+        apply (AR.O.outcome_fits W P state_ok _ _ _ _ bt).
         { destruct Bt as [-> | ->]; [apply fits_refl|apply fits_never]. }
         eapply AR.O.outcome_breaks; [|exact (sblke F C b exp bx bt Db d types H1 g1 st1 (pre_lower Pre1))].
         intro B; apply A.BkIfB; exact B.
-      * eapply AR.O.outcome_breaks; [|exact (unit_k F C d types H1 g1 st1 (pre_lower Pre1))]. intros [].
-    + (* if-else *) cbn [AR.O.I.eval].
-      destruct (scond F C c cx' Dc d types H lg lst (pre_lower Pre0)) as [bsym [Lang Out]].
+      * rewrite (proj2 (Nat.eqb_neq _ _) Distinct).
+        cbn [List.length app]; rewrite conditional_popn.
+        eapply AR.O.outcome_breaks; [|exact (unit_k F C d types H1 g1 st1 (pre_lower Pre1))]. intros [].
+    + (* if-else *) rewrite conditional_evaluation.
+      destruct (conditional_scrutinee F C c cx' Dc d types H lg lst (pre_le _ _ _ _ _ _ _ _ _ (Nat.le_trans _ _ _ (Nat.le_pred_l k) (Nat.le_succ_diag_r k)) Pre0))
+        as [bsym [Lang Out]].
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => A.BkIfC b (Some y) B) Out).
       intros H1 g1 st1 w E1 Pre1 T1.
-      destruct (B.truthy_typed W Prog argv read H1 bsym w Bools Lang T1) as [bit Bit].
-      replace (AR.O.I.truthy P w) with (Some bit) by (symmetry; exact Bit).
+      pose proof (lang_sym_unique _ _ _ _ _ _ Lang (proj1 Tags)) as ->.
       destruct (blke_branch_ty _ _ _ _ _ _ Db) as [FitsA FitsBt].
       destruct (join_fits _ _ _ _ _ Join FitsA FitsBt FitsE) as [Left Right].
-      destruct bit.
-      * apply (AR.O.outcome_fits W P state_ok _ _ _ _ bt); [exact Left|].
+      destruct (conditional_value _ _ _ _ _ Tags T1) as [Distinct [->| ->]];
+        cbn [AR.O.I.select_arm AR.O.I.match_pat]; rewrite !Nat.eqb_refl.
+      * cbn [List.length app]; rewrite conditional_popn.
+        apply (AR.O.outcome_fits W P state_ok _ _ _ _ bt); [exact Left|].
         eapply AR.O.outcome_breaks; [|exact (sblke F C b exp bx bt Db d types H1 g1 st1 (pre_lower Pre1))].
         intro B; apply A.BkIfB; exact B.
-      * apply (AR.O.outcome_fits W P state_ok _ _ _ _ et); [exact Right|].
+      * rewrite (proj2 (Nat.eqb_neq _ _) Distinct).
+        cbn [List.length app]; rewrite conditional_popn.
+        apply (AR.O.outcome_fits W P state_ok _ _ _ _ et); [exact Right|].
         eapply AR.O.outcome_breaks; [|exact (sbranch F C y exp ex' et Dy d types H1 g1 st1 (pre_lower Pre1))].
         intro B; apply A.BkIfE; exact B.
     + (* match *) cbn [AR.O.I.eval].

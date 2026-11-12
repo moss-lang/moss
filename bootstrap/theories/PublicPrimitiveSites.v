@@ -559,8 +559,6 @@ Proof.
       destruct signal; try reflexivity. apply IHe. exact Eq.
     + rewrite (IHe d d' g st e Eq). reflexivity.
     + rewrite (IHe d d' g st e1 Eq). destruct (eval fuel P d' g st e1) as [signal g1 st1].
-      destruct signal; try reflexivity. destruct (truthy P v) as [[]|]; try reflexivity; apply IHe; exact Eq.
-    + rewrite (IHe d d' g st e1 Eq). destruct (eval fuel P d' g st e1) as [signal g1 st1].
       destruct signal; try reflexivity. destruct (truthy P v) as [[]|]; try reflexivity.
       rewrite (IHe d d' g1 st1 e2 Eq). destruct (eval fuel P d' g1 st1 e2) as [signal g2 st2].
       destruct signal; try reflexivity. apply IHe. exact Eq.

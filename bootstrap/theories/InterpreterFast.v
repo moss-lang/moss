@@ -606,16 +606,6 @@ Fixpoint feval (fuel : nat) (P : program_view) (d : fenv) (g : locals) (st : mst
               end
           | r => r
           end
-      | EIf c e1 e2 =>
-          match feval k P d g st c with
-          | I.Evaluation (Normal w) g1 st1 =>
-              match I.truthy P w with
-              | Some true => feval k P d g1 st1 e1
-              | Some false => feval k P d g1 st1 e2
-              | None => I.Evaluation (Stuck I.e_bool) g1 st1
-              end
-          | r => r
-          end
       | EWhile c b =>
           match feval k P d g st c with
           | I.Evaluation (Normal w) g1 st1 =>
@@ -853,8 +843,6 @@ Proof.
       * rewrite (IHe P fd ld g st e1 H). destruct (L.leval k P ld g st e1) as [[] g1 st1]; try reflexivity.
         apply (IHe P _ _ _ _ _ H).
       * rewrite (IHe P fd ld g st e H). reflexivity.
-      * rewrite (IHe P fd ld g st e1 H). destruct (L.leval k P ld g st e1) as [[] g1 st1]; try reflexivity.
-        destruct (I.truthy P v) as [[]|]; try reflexivity; apply (IHe P _ _ _ _ _ H).
       * rewrite (IHe P fd ld g st e1 H). destruct (L.leval k P ld g st e1) as [[] g1 st1]; try reflexivity.
         destruct (I.truthy P v) as [[]|]; try reflexivity.
         rewrite (IHe P fd ld g1 st1 e2 H). destruct (L.leval k P ld g1 st1 e2) as [[] g2 st2]; try reflexivity.
