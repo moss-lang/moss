@@ -190,11 +190,11 @@ Proof.
   intros C v s value after Checked. unfold platform_entry, mbind, ret, fail in Checked. cbv zeta in Checked. fold W in Checked.
   destruct (w_decl W v) as [declaration|] eqn:Decl; [|discriminate].
   destruct (platform_modb E (d_mod declaration)) eqn:ModuleOk; [|discriminate].
-  destruct (cval C v) as [t|] eqn:TypeRead; [|discriminate].
+  destruct (cval (P.entry_view W C) v) as [t|] eqn:TypeRead; [|discriminate].
   destruct (machine_type E "I32" t) eqn:TypeChecked; [|discriminate].
   destruct (filed_name (d_ast declaration)) as [[space name]|] eqn:Name; [|discriminate].
   destruct space; try discriminate.
-  assert (ValueType : exists t, nlook v (c_vals C) = Some t /\ P.MachineType W "I32" t).
+  assert (ValueType : exists t, nlook v (c_vals (P.entry_view W C)) = Some t /\ P.MachineType W "I32" t).
   { exists t. split; [now rewrite <- cval_exact|now apply machine_type_sound]. }
   destruct (String.eqb name "i32_zero") eqn:Zero.
   - injection Checked as <- <-. apply String.eqb_eq in Zero. subst name.
@@ -214,7 +214,7 @@ Proof.
   destruct (d_ast declaration) as [| | | | | |receiver name params result body| |] eqn:Ast; try discriminate.
   destruct receiver; try discriminate.
   destruct (prim_of_name name) as [operation|] eqn:Primitive; [|discriminate].
-  destruct (at_key E C (IFn f) operation && handles_read E C (IFn f)) eqn:Checks; [|discriminate].
+  destruct (at_key E (P.entry_view W C) (IFn f) operation && handles_read E (P.entry_view W C) (IFn f)) eqn:Checks; [|discriminate].
   injection Checked as <- <-. apply andb_true_iff in Checks as [Signature Handles].
   split; [split|].
   - now apply at_key_sound.
@@ -290,7 +290,7 @@ Proof.
   apply andb_true_iff in Row as [FixedRead BoundRead].
   split.
   - apply (proj1 (EaResultBudget.fixed_exact W bound Bounded _ u Enough symbol)). now apply EaTypesSound.nmem_spec.
-  - unfold EaCall.bound_in in BoundRead. destruct (nlook symbol (c_ty inputs)) as [meaning|] eqn:Bound; [|discriminate].
+  - unfold bound_in in BoundRead. destruct (nlook symbol (c_ty inputs)) as [meaning|] eqn:Bound; [|discriminate].
     change symbol with (fst (symbol, meaning)). apply in_map. now apply PublicTypeRead.nlook_in.
 Qed.
 
@@ -374,41 +374,6 @@ Proof.
   - now apply provision_ids_distinct.
 Qed.
 
-Lemma canon_atom_in_class : forall C y, In y (EaCall.class_of C (canon C (TAbs y))).
-Proof.
-  intros C y. unfold canon, EaCall.class_of. cbn [app_subst].
-  destruct (lookup_subst y (c_sub C)) as [t|] eqn:Read.
-  - apply in_or_app. right. apply in_flat_map. exists (y,t). split.
-    + now apply PublicCallRealize.lookup_subst_in_pair.
-    + cbn [fst snd]. rewrite (proj2 (PublicTypeFacts.ty_eqb_spec _ _) eq_refl). now left.
-  - apply in_or_app. left. rewrite Read. now left.
-Qed.
-
-Lemma fixed_machines_read_sound : forall program main C needs u,
-  program_machines program = P.machine_table W -> CtxOf W main C needs ->
-  fixed_machines_read E C u = true -> P.FixedMachinesRead program C u.
-Proof.
-  intros program main C needs u Machines Ctx Checked fx Found symbol t Machine Fixed.
-  unfold fixed_machines_read in Checked. rewrite EaSatisfiesSound.cfun_exact, Found in Checked.
-  assert (Provided : In (IFun u, ProvidedFunctor fx) (c_provisions C)).
-  { apply PublicTypeRead.nlook_in in Found. unfold c_funs in Found.
-    apply in_flat_map in Found as [[k p] [Member Row]].
-    destruct k, p; cbn in Row; try contradiction. destruct Row as [Equal|[]]. injection Equal as <- <-. exact Member. }
-  destruct (PublicCallRealize.ctx_fun_fixed W main C needs Ctx u fx Provided) as [_ [_ Unique]].
-  assert (FixedRead : lookup_subst symbol fx = Some t).
-  { assert (Domain : In symbol (map fst fx)) by (change symbol with (fst (symbol,t)); now apply in_map).
-    destruct (lookup_subst symbol fx) as [read|] eqn:Lookup; [|now apply PublicCallRealize.lookup_subst_in in Domain].
-    f_equal. eapply Unique; [eapply PublicCallRealize.lookup_subst_in_pair; exact Lookup|exact Fixed]. }
-  rewrite Machines in Machine. fold W in Checked.
-  pose proof (proj1 (forallb_forall _ _) Checked symbol Machine) as Row. cbv beta zeta in Row.
-  rewrite FixedRead in Row. apply andb_true_iff in Row as [Check Members].
-  apply andb_true_iff in Check as [Reading Atomic].
-  apply PublicTypeFacts.ty_eqb_spec in Reading. split; [exact Reading|]. split.
-  - destruct (canon C (TAbs symbol)); try discriminate. eexists. reflexivity.
-  - intros y Equal. pose proof (canon_atom_in_class C y) as Member. rewrite Equal in Member.
-    apply forallb_forall with (x := y) in Members; [|exact Member]. now apply Nat.eqb_eq in Members.
-Qed.
-
 Lemma emit_fun_code_records : forall code before slot after,
   emit_fun_code code before = Ok (slot, after) ->
   slot_index slot < es_next after /\
@@ -430,7 +395,7 @@ Proof.
   destruct (w_decl W u) as [declaration|] eqn:Decl; [|discriminate].
   destruct (platform_modb E (d_mod declaration)) eqn:ModuleOk; [|discriminate].
   destruct (d_ast declaration) as [| | | | | | | |name params arguments results body] eqn:Ast; try discriminate.
-  destruct body; try discriminate. destruct (fixed_machines_read E C u) eqn:MachinesRead; [|discriminate].
+  destruct body; try discriminate.
   destruct (platform_code E u) as [code|] eqn:Code; [|discriminate].
   change ((match emit_fun_code code before with
     | Ok (slot, state) => Ok (FunctorClosure (slot_index slot) None empty_environment None, state)
@@ -438,9 +403,8 @@ Proof.
   destruct (emit_fun_code code before) as [[slot state]|] eqn:Emit; [|discriminate].
   injection Run as <- <-. destruct (emit_fun_code_records _ _ _ _ Emit) as [Below Stored].
   pose proof (Codes _ _ Below Stored) as BodyStored.
-  split; [split|].
+  split.
   - eapply platform_code_sound; try eassumption. eauto 8.
-  - eapply fixed_machines_read_sound; eassumption.
   - eapply P.PEFun; try eassumption. now apply platform_modb_sound. congruence.
 Qed.
 
@@ -494,6 +458,11 @@ Proof.
   fold W in Context. destruct (w_context W main) as [[formal required]|] eqn:Read; [|discriminate Context].
   injection Context as ContextEqual NeedsEqual StateEqual. subst formal required before.
   pose proof (Contexts main C needs Read) as Ctx. rewrite Kind in Ctx.
+  do 2 (apply EaControlSound.mbind_ok in Run as (?value & ?state & ?check & Run)).
+  repeat match goal with
+  | Step : pure ?result ?state = Ok (?value, ?next) |- _ =>
+      destruct result; [injection Step as <- <-|discriminate Step]
+  end.
   apply EaControlSound.mbind_ok in Run as (provisions & finish & Entries & Run).
   injection Run as Environment State. subst finish. rewrite <- Environment. cbn [provision_values].
   exists C, needs. split; [exact Ctx|].

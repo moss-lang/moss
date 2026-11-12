@@ -254,7 +254,9 @@ Proof.
     + split.
       * reflexivity.
       * exists empty_context, [], [], []. split; [exact main_context|].
-        split; [reflexivity|]. split; [reflexivity|]. split; [constructor|].
+        split.
+        { split; [|reflexivity]. split; [intros r []|]. repeat split; intros; contradiction. }
+        split; [reflexivity|]. split; [constructor|].
         split; [constructor|]. split; [reflexivity|exact (conj main_layouts (conj main_bounded eq_refl))].
 Qed.
 

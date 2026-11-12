@@ -140,7 +140,7 @@ Lemma platform_linked_fields : forall W P,
   Platform.Linked W P <->
   Platform.EntryPoint W P /\ Platform.Layouts W /\ Platform.Representations W P /\
   exists context needs types entries,
-    CtxOf W (program_main P) context needs /\ AuditBase.initial_types (program_machines P) context types /\
+    CtxOf W (program_main P) context needs /\ Platform.InitialTypes W (program_main P) context types /\
     program_environment P = Environment types entries /\
     Forall (fun entry => Platform.Entry W P context (fst entry) (snd entry)) entries /\
     Forall (fun entry => Platform.PlatformEntry W P (fst entry) (snd entry)) entries /\

@@ -1,0 +1,19 @@
+# Base supplies X through main's equation X = I32. The type reading
+# must agree with platform primitives in either context order.
+# The other order is in platform_fixed_merge_ix.moss.
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm, I32, i32_eqz;
+import "../../lib/wasip1.moss" use WasiCore;
+
+type X;
+
+context Two = X, i32_eqz[I32 = X], i32_eqz;
+
+assume Wasm, WasiCore, Branch, Two {
+  fn main() {
+    bind WasiStd;
+    putchar(char::k);
+    putchar(char::newline);
+  }
+}

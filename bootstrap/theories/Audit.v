@@ -3361,6 +3361,35 @@ Definition theta_at (W : world) (C : cx) (s : nat) : subst :=
 Definition theta_ctx (C : cx) : subst :=
   map (fun q => (fst q, canon C (app_subst (c_ty C) (TAbs (fst q))))) (c_ty C).
 
+Definition bound_in (C : cx) (r : nat) : bool :=
+  match nlook r (c_ty C) with Some _ => true | None => false end.
+Definition read_here (C : cx) (r : nat) : ty := canon C (app_subst (c_ty C) (TAbs r)).
+
+(* the members of the merge class (in Cs) whose canonical reading is t *)
+Definition class_of (Cs : cx) (t : ty) : list nat :=
+  (match t with
+   | TAbs z => match lookup_subst z (c_sub Cs) with Some _ => [] | None => [z] end
+   | _ => []
+   end) ++
+  flat_map (fun q => if ty_eqb (snd q) t then [fst q] else []) (c_sub Cs).
+
+(* a class representative z's value here: through its first member C binds *)
+Definition class_value (C Cs : cx) (z : nat) : ty :=
+  match find (bound_in C) (class_of Cs (TAbs z)) with
+  | Some y => read_here C y
+  | None => canon C (TAbs z)
+  end.
+
+Definition call_read (C Cs : cx) (read_class : nat -> ty) (r : nat) : ty :=
+  if bound_in C r then read_here C r else
+  match canon Cs (TAbs r) with
+  | TAbs z => read_class z
+  | t => canon C (app_subst (map (fun z => (z, read_class z)) (gens t)) t)
+  end.
+
+Definition call_type_arguments (C Cs : cx) (read_class : nat -> ty) : subst :=
+  map (fun q => (fst q, call_read C Cs read_class (fst q))) (c_ty Cs).
+
 (* The instantiation of a call of s (assume context Cs) from context C: a
    meaning for each of s's requirements, in their fixed order. Where C
    gives a requirement a meaning, θ reads it here (theta_at). Every merge
@@ -5926,16 +5955,13 @@ Definition Elaborates (b : bundle) (P : program) : Prop :=
 End Elaboration.
 
 
-(* The platform's source signatures. These checks relate library declarations
-   to the machine operations supplied at linking, using the same world as
-   elaboration. A matching name alone is insufficient. *)
-(* The language's linking rule consumes only this static platform contract.
-   A platform supplies the root context, tables, entry provisions and ABI,
-   and any additional restrictions on the programs it can run. *)
+(* Linking reads the platform's entry types and provisions in the
+   same source world as elaboration. The platform also supplies the root
+   assumptions, entry ABI, and admissibility conditions. *)
 Module Type STATIC_PLATFORM.
   Parameter root_item : option (string * Input.name).
   Parameter Tables : Elaboration.world -> Repr.program_data -> Prop.
-  Parameter InitialTypes : Elaboration.world -> program -> Elaboration.cx -> subst -> Prop.
+  Parameter InitialTypes : Elaboration.world -> fsym -> Elaboration.cx -> subst -> Prop.
   Parameter Provides : Elaboration.world -> program -> Elaboration.cx -> item -> provision_value -> Prop.
   Parameter EntryABI : Elaboration.world -> program -> Prop.
   Parameter Admissible : Elaboration.world -> program -> Prop.
@@ -5947,7 +5973,7 @@ Definition Linked (W : world) (P : program) : Prop :=
   w_root_item W = Pf.root_item /\ Pf.EntryABI W P /\ Pf.Admissible W P /\
   Pf.Tables W (program_platform P) /\
   exists context needs types entries,
-    CtxOf W (program_main P) context needs /\ Pf.InitialTypes W P context types /\
+    CtxOf W (program_main P) context needs /\ Pf.InitialTypes W (program_main P) context types /\
     program_environment P = Environment types entries /\
     Forall (fun entry => Pf.Provides W P context (fst entry) (snd entry)) entries.
 Definition Ready (P : program) : Prop :=

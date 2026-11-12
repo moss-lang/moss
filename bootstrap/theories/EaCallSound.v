@@ -22,12 +22,12 @@ Proof.
 Qed.
 
 Lemma bound_leaf_spec : forall C Cs y, PublicContextFacts.CxSection Cs ->
-  (EaCall.bound_in C y || EaCall.has_bound_reading C Cs (canon Cs (TAbs y))) = true <->
+  (bound_in C y || EaCall.has_bound_reading C Cs (canon Cs (TAbs y))) = true <->
   InForceClass C (c_merge Cs) y.
 Proof.
   intros C Cs y Section. rewrite orb_true_iff, (bound_reading_spec C Cs y Section). split.
   - intros [Bound|Bound]; [|exact Bound]. exists y. split; [apply MERefl|].
-    unfold EaCall.bound_in in Bound. destruct (nlook y (c_ty C)); cbn [EaBase.is_some] in Bound; congruence.
+    unfold bound_in in Bound. destruct (nlook y (c_ty C)); cbn [EaBase.is_some] in Bound; congruence.
   - intro Bound. right. exact Bound.
 Qed.
 
@@ -97,12 +97,12 @@ Qed.
 Theorem call_theta_with_sound : forall W who C Cs read_class s th,
   PublicContextFacts.CxSection C -> PublicContextFacts.CxSection Cs ->
   EaCall.call_theta_with W who C Cs read_class = EaBase.Ok th ->
-  th = map (fun q => (fst q, EaCall.call_read C Cs read_class (fst q))) (c_ty Cs) /\
+  th = map (fun q => (fst q, call_read C Cs read_class (fst q))) (c_ty Cs) /\
   CallTheta W C Cs s th.
 Proof.
   intros W who C Cs read_class s th Caller Callee Check.
-  unfold EaCall.call_theta_with in Check.
-  set (candidate := map (fun q => (fst q, EaCall.call_read C Cs read_class (fst q))) (c_ty Cs)) in *.
+  unfold EaCall.call_theta_with, call_type_arguments in Check.
+  set (candidate := map (fun q => (fst q, call_read C Cs read_class (fst q))) (c_ty Cs)) in *.
   set (fails := fun q : tsym * ty =>
     negb (ty_eqb (canon C (app_subst candidate (TAbs (fst q))))
       (canon C (app_subst candidate (snd q))))) in Check.
@@ -113,7 +113,7 @@ Proof.
   - split.
     + intros r Ir Bound. unfold candidate.
       rewrite (PublicSubstFacts.lookup_on_keys _ _ _ Ir).
-      unfold EaCall.call_read, EaCall.bound_in.
+      unfold call_read, bound_in.
       destruct (nlook r (c_ty C)); [reflexivity|contradiction].
     + eapply PublicMerge.respects_section; [exact Callee|].
       intros g t Row. apply (PublicContextFacts.context_canon_iff_mergeeq C Caller).
@@ -130,5 +130,5 @@ Theorem call_theta_sound : forall W who C Cs s th,
   EaCall.call_theta W who C Cs = EaBase.Ok th -> CallTheta W C Cs s th.
 Proof.
   intros W who C Cs s th Caller Callee Check.
-  exact (proj2 (call_theta_with_sound W who C Cs (EaCall.class_value C Cs) s th Caller Callee Check)).
+  exact (proj2 (call_theta_with_sound W who C Cs (class_value C Cs) s th Caller Callee Check)).
 Qed.

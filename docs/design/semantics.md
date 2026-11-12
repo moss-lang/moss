@@ -5106,8 +5106,14 @@ the platform root context during checking, including an imported function
 calls the reference host implements. The prelude imports both contexts
 and `StdBase`. Programs that run on both back ends can assume
 `ReferenceBase` and bind `StdBase`. Reusable code can assume
-`Std` or narrower contexts. The reference checks every declared
-assumption of `main` at build time.
+`Std` or narrower contexts.
+
+The build checks `main`'s body under its assumptions, then links it
+against the platform. The entry check uses ordinary call instantiation
+to read each assumed type in Base's context. An abstract name merged
+with `I32` can take the meaning Base supplies for `I32`. An equation
+between `I32` and `F64` fails because Base supplies distinct meanings.
+The linker also checks the assumed operations at the resulting types.
 
 `WasiStd` is a compatibility wrapper around `StdBase`.
 `println` is ordinary library code over contextual string

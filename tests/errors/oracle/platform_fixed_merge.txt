@@ -1,1 +1,1 @@
-[elab: lib/wasm.moss: platform functor has an incompatible assumed fixed type]
+[elab: calling `main` from Base needs `I32` and `Bool` to be one type, which its context merged (D43), but here they are `I32` and `Bool`]

@@ -1,5 +1,6 @@
 From Stdlib Require Import List String Bool Arith.
 From NM Require Import Audit EaBase EaTypes EaTypesSound.
+From NM Require EaCall EaCallSound PublicContextFacts PublicMerge PublicTypeRead.
 From NM Require AuditBase EaPlatform EaRootSound PublicTypeFacts.
 Import ListNotations AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -103,6 +104,28 @@ Proof.
   }
   destruct reference, array. split; [eapply tag_layout_sound; exact Reference|].
   split; [eapply tag_layout_sound; exact Array|eapply tag_layout_sound; exact Address].
+Qed.
+
+Theorem entry_type_match_sound : forall W main C needs,
+  CtxOf W main C needs ->
+  EaCall.rule_b W "calling `main` from Base" (P.entry_context W) C = Ok tt ->
+  forall arguments,
+  EaCall.call_theta W "calling `main` from Base" (P.entry_context W) C = Ok arguments ->
+  P.EntryTypeMatch W main C.
+Proof.
+  intros W main C needs Context Force arguments Call.
+  destruct (PublicContextFacts.function_context_merge W main C needs Context) as [Solved Section].
+  assert (Caller : PublicContextFacts.CxSection (P.entry_context W)).
+  { split.
+    - intros x. apply MERefl.
+    - intros t u Equal. change (MergeEq [] t u) in Equal.
+      apply (PublicMerge.merge_eq_sound (s := []) (M := [])) in Equal.
+      + exact Equal.
+      + split; intros c ? ? Member; contradiction. }
+  split; [eapply EaCallSound.rule_b_sound; eassumption|].
+  unfold EaCall.call_theta in Call.
+  destruct (EaCallSound.call_theta_with_sound _ _ _ _ _ main _ Caller Section Call) as [-> Read].
+  exact Read.
 Qed.
 
 Theorem tables_sound : forall E,

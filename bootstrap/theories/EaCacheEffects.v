@@ -121,7 +121,7 @@ Proof.
   intros E F C u outs. unfold EaFunctor.allocate_application_outputs. cbn zeta.
   apply cache_effect_bind; [destruct outs; cache_pure|intros []].
   apply cache_effect_mmap. intro output. unfold EaFunctor.allocate_output.
-  destruct (EaCall.bound_in C output || nmem output (context_gens C ++ key_receiver_gens C))%bool.
+  destruct (bound_in C output || nmem output (context_gens C ++ key_receiver_gens C))%bool.
   - apply cache_effect_bind; [cache_pure|]. intro generation.
     apply cache_effect_bind; [cache_pure|intros []]. cache_pure.
   - match goal with

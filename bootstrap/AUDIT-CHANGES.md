@@ -1366,6 +1366,11 @@ executable tests unless noted.
   lack). No program found whose verdict changes.
 
 ### 53. Main's fixed machine types are read by class (coherence2 branch; PART-DESIGN §1.5 #5)
+This records the earlier singleton-class check. Entry linking now
+instantiates main's types through the ordinary call rules. Base can
+therefore supply an abstract symbol through a merge with a type it
+already supplies.
+
 - **Rule now.** `FixedMachinesRead` (Platform.Entry, for each platform
   functor in main's context) asks, for each machine type `symbol` the
   functor fixes at meaning t:
@@ -1403,8 +1408,8 @@ executable tests unless noted.
 
   | program | oracle | native | Audit before | Audit now |
   |---|---|---|---|---|
-  | [tests/errors/platform_fixed_merge_xi.moss](../tests/errors/platform_fixed_merge_xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
-  | [tests/errors/platform_fixed_merge_ix.moss](../tests/errors/platform_fixed_merge_ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
+  | [tests/wasi/platform_fixed_merge_xi.moss](../tests/wasi/platform_fixed_merge_xi.moss) (`context Two = X, i32_eqz[I32 = X], i32_eqz`) | rejects ("incompatible assumed fixed type") | rejects ("incompatible types: `Arrays`") | clause passes with representative I32, fails with X (argued) | rejects |
+  | [tests/wasi/platform_fixed_merge_ix.moss](../tests/wasi/platform_fixed_merge_ix.moss) (the same merge, the other order) | rejects | rejects | the same | rejects |
   | [tests/errors/platform_fixed_merge.moss](../tests/errors/platform_fixed_merge.moss) (I32 = Bool, #39) | rejects | rejects | rejects | rejects |
 
 - **Corpus.** An oracle variant whose `check_platform_entry_view` asks

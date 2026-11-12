@@ -1,7 +1,7 @@
 From Stdlib Require Import List String Arith Lia.
 From NM Require Import AuditBase.
 Import AuditBase.Compilation.
-From NM Require Audit AuditBase EaBase EaContextTableSound EaCodeAllocationSound EaAssemblyCodeEffects EaExpand EaExpansionSound EaLayoutSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
+From NM Require Audit AuditBase EaBase EaContextTableSound EaCodeAllocationSound EaAssemblyCodeEffects EaCall EaExpand EaExpansionSound EaLayoutSound EaMain EaPlatform EaPlatformSound EaSatisfiesSound EaTypes EaTypesSound EaWorldSound
   SnapshotLoader Sx.
 From NM Require Import EaControlSound.
 From NM Require EaPlatformEntrySound.
@@ -149,7 +149,7 @@ Theorem main_environment_typed : forall env main before initial after,
   EaPlatform.main_environment env main before = Ok (initial, after) ->
   exists C needs types provisions,
     CtxOf (e_W env) main C needs /\
-    AuditBase.initial_types (AuditBase.Platform.machine_table (e_W env)) C types /\
+    P.InitialTypes (e_W env) main C types /\
     initial = Environment types provisions /\ map fst provisions = map (rkey_of C) needs.
 Proof.
   intros env main before initial after Contexts Kind Run.
@@ -158,15 +158,22 @@ Proof.
   destruct (w_context (e_W env) main) as [[formal required]|] eqn:Found;
     [|discriminate Read].
   injection Read as <- <- <-.
+  apply mbind_ok in Run as (forced & middle & Read & Run).
+  unfold pure in Read. destruct (EaCall.rule_b (e_W env) "calling `main` from Base"%string (P.entry_context (e_W env)) formal)
+    as [[]|message] eqn:Force; [|discriminate Read].
+  injection Read as <- <-.
+  apply mbind_ok in Run as (arguments & middle & Read & Run).
+  unfold pure in Read. destruct (EaCall.call_theta (e_W env) "calling `main` from Base"%string (P.entry_context (e_W env)) formal)
+    as [theta|message] eqn:Call; [|discriminate Read].
+  injection Read as <- <-.
   apply mbind_ok in Run as (provisions & finish & Entries & Run).
   injection Run as <- _.
-  exists formal, required,
-    (map (fun q => (fst q,
-      app_subst (AuditBase.machine_subst (AuditBase.Platform.machine_table (e_W env))) (snd q)))
-      (c_ty formal)), provisions.
-  split.
-  - specialize (Contexts main formal required Found). rewrite Kind in Contexts. exact Contexts.
-  - repeat split. eapply platform_entries_keys; eassumption.
+  exists formal, required, (P.entry_types (e_W env) formal), provisions.
+  assert (Ctx : CtxOf (e_W env) main formal required).
+  { specialize (Contexts main formal required Found). now rewrite Kind in Contexts. }
+  split; [exact Ctx|]. split.
+  - split; [eapply EaPlatformSound.entry_type_match_sound; eassumption|reflexivity].
+  - split; [reflexivity|eapply platform_entries_keys; eassumption].
 Qed.
 
 Lemma elaborate_uses_assemble : forall strategy bundle world program,
@@ -205,7 +212,7 @@ Theorem elaborate_main_environment : forall strategy bundle world program,
     d_ast d = ADFn RPlain n [] rt (Some body)) /\
   exists C needs types provisions,
     CtxOf world (program_main program) C needs /\
-    AuditBase.initial_types (program_machines program) C types /\
+    P.InitialTypes world (program_main program) C types /\
     program_environment program = Environment types provisions /\
     map fst provisions = map (rkey_of C) needs.
 Proof.
@@ -218,7 +225,7 @@ Proof.
   assert (Kind : kind_sym (e_W env) (program_main program) = Some DKFn).
   { destruct Main as (d & n & rt & body & Declaration & Shape).
     unfold kind_sym. rewrite Declaration, Shape. reflexivity. }
-  rewrite (proj2 Tables). eapply main_environment_typed; eassumption.
+  eapply main_environment_typed; eassumption.
 Qed.
 
 Theorem elaborate_platform_sound : forall strategy bundle world program,
@@ -333,5 +340,5 @@ Proof.
     + destruct (elaborate_uses_assemble _ _ _ _ Run) as (env & bound & after & <- & _ & _ & Assembled).
       eapply EaCodeAllocationSound.assemble_explicit_references; exact Assembled.
   - split; [exact Tables|].
-    exists C, needs, types, provisions. repeat split; assumption.
+    exists C, needs, types, provisions. split; [exact MainCtx|]. split; [exact Initial|]. split; assumption.
 Qed.

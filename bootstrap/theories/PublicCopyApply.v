@@ -421,7 +421,7 @@ Lemma chain_entry : forall rr H u gfx pv, ClosureOk rr H u gfx pv ->
      ClosureOk rr H h0 gf0 (FunctorClosure code None dc None)).
 Proof.
   intros rr H u gfx pv Ok. induction Ok as [u gg h Cu nsu Cg nsg linktarget dc gfx pins LB Binding FCu FCg FxIn AbU Caps CF PinsOk
-    |u h Cu nsu Ch nsh target code sms dc rms rm gfx gfh Okh IH FCu FCh Incl Fx CO Sub SO Site|u code gfx Fam Mach PR];
+    |u h Cu nsu Ch nsh target code sms dc rms rm gfx gfh Okh IH FCu FCh Incl Fx CO Sub SO Site|u code gfx Fam Mach];
     intros code0 sms0 dc0 rms0 E d f Cu0 nsu0 e1 FCu0 Real Fixd; injection E as <- <- <- <-.
   - left. destruct (S.functx_unique W _ _ _ _ _ FCu FCu0) as [<- <-].
     destruct (select_ok e1 (A.link_map Cu Cg linktarget nsg)) as [e2 Sel2].
@@ -463,7 +463,7 @@ Proof.
       split; [exact (CCStep u h Cu nsu Ch nsh target gfx gfh sms rms rm h0 gf0 _ _ Chn FCu FCh Incl Fx CO Sub SO Site)|].
       split; [exact Edc|]. split; [exact Fam|exact Ok0].
   - right. exists u, gfx. split; [constructor|]. split; [reflexivity|]. split; [exact Fam|].
-    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach PR).
+    exact (S.CPlatform W Prog argv read state_ok rr H u code gfx Fam Mach).
 Qed.
 
 Lemma app_meanings_ext : forall (b1 b2 : nat -> ty) (tb : list (nat * ty)) l, (forall x, b1 x = b2 x) ->

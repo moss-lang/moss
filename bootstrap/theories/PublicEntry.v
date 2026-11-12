@@ -10,7 +10,7 @@ From NM Require Import Audit PublicTypeRead PublicValueTyping PublicLocalsTyping
   PublicSafety PublicContextFacts PublicCallRealize PublicTagCheck PublicPrimitiveSafety PublicBoolTyping
   PublicCopyApply PublicFamilyStep PublicPlatformApply PublicLinkResults.
 From NM Require PublicFormation PublicWorldFormation PublicFamilySig PublicChainCore PublicChainNew PublicChainFwd PublicLinkMerges PublicFamilyCoherent PublicFamilyLink PublicChainSigs PublicChainRealize PublicFamilyCopy.
-From NM Require BodyProgramTyping.
+From NM Require BodyProgramTyping PublicMerge PublicSubstFacts.
 Import Audit.Input AuditBase.Semantics ListNotations.
 Module A := AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
@@ -28,11 +28,6 @@ Module M := M0.
    minutes. *)
 Module FCp := PublicFamilyCopy.FamilyCopy M.ReferenceHost M.Reference.
 
-Section Entry.
-Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
-Let P := program_of Prog argv read.
-Variable state_ok : heap_types -> M.ReferenceHost.mstate -> Prop.
-
 (* A substitution that fixes a type fixes each generation it mentions. *)
 Lemma subst_fixed_gens : forall u s, app_subst s u = u -> forall y, In y (A.gens u) -> app_subst s (TAbs y) = TAbs y.
 Proof.
@@ -49,19 +44,175 @@ Proof.
     apply in_app_or in Iy as [Iy|Iy]; [exact (IH t s Ft y Iy)|exact (Tail Fr Iy)].
 Qed.
 
-(* The initial type table: each type of main's context as it reads there,
-   with the machine types' representations substituted. *)
-Lemma entry_absorbs : forall f C ns ms platform, A.CtxOf W f C ns ->
-  FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Absorbs C (Environment (map (fun q => (fst q, app_subst ms (snd q))) (A.c_ty C)) platform).
+(* The ordinary call instantiation reads the callee's equations in
+   the caller's context. Base's abstract type identities are distinct. *)
+Lemma entry_read_merges : forall W f C, Platform.EntryTypeMatch W f C ->
+  ReadsMerge C (app_subst (Platform.entry_arguments W C)).
 Proof.
-  intros f C ns ms platform Ctx.
+  intros W f C [_ [_ [_ Respect]]] t u Equal.
+  pose proof (PublicMerge.merge_eq_substitute Respect Equal) as Read.
+  cbn [Platform.entry_context A.c_merge] in Read.
+  eapply PublicMerge.merge_eq_sound with (s := []) in Read.
+  - now rewrite !app_subst_nil in Read.
+  - split; intros c ? ? Member; contradiction.
+Qed.
+
+Lemma entry_ground : forall W f C ns types t,
+  A.CtxOf W f C ns -> Platform.InitialTypes W f C types ->
+  incl (A.gens t) (map fst (A.c_ty C)) ->
+  app_subst types t =
+  app_subst (AuditBase.machine_subst (Platform.machine_table W))
+    (app_subst (Platform.entry_arguments W C) t).
+Proof.
+  intros W f C ns types t Ctx [Match ->] Scope.
+  rewrite <- (app_subst_nil t) at 1.
+  apply subst2_agree. intros x InX.
+  change (In x (A.gens t)) in InX.
+  destruct (keys_in (A.c_ty C) x (Scope x InX)) as [tx Key].
+  destruct (ctxof_formed W f C ns Ctx) as [Read _].
+  pose proof (proj2 (function_context_merge W f C ns Ctx)) as Section.
+  set (read_type := fun t => app_subst (AuditBase.machine_subst (Platform.machine_table W))
+    (app_subst (Platform.entry_arguments W C) t)).
+  change ((match lookup_subst x (map (fun q => (fst q, read_type (snd q))) (A.c_ty C)) with
+           | Some value => value | None => TAbs x end) = read_type (TAbs x)).
+  rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd read_type), lookup_subst_nlook, Key.
+  cbn [option_map]. rewrite (Read x tx Key). unfold read_type.
+  now rewrite <- (entry_read_merges W f C Match _ _ (proj1 Section x)).
+Qed.
+
+Lemma identity_type_found : forall symbol symbols t,
+  A.nlook symbol (map (fun x => (x, TAbs x)) symbols) = Some t ->
+  t = TAbs symbol /\ In symbol symbols.
+Proof.
+  intros symbol symbols. induction symbols as [|x rest IH]; intros t Read; [discriminate|].
+  cbn [map A.nlook fst snd] in Read. destruct (Nat.eqb_spec symbol x) as [->|Different].
+  - injection Read as <-. split; [reflexivity|now left].
+  - destruct (IH _ Read) as [-> Member]. split; [reflexivity|now right].
+Qed.
+
+Lemma identity_type_lookup : forall symbol symbols,
+  In symbol symbols -> A.nlook symbol (map (fun x => (x, TAbs x)) symbols) = Some (TAbs symbol).
+Proof.
+  intros symbol symbols. induction symbols as [|x rest IH]; intro Member; [contradiction|].
+  cbn [map A.nlook fst snd]. destruct (Nat.eqb_spec symbol x) as [->|Different]; [reflexivity|].
+  apply IH. destruct Member as [Equal|Tail]; [congruence|exact Tail].
+Qed.
+
+Lemma entry_machine_argument : forall W f C symbol,
+  Platform.EntryTypeMatch W f C -> In symbol (map fst (Platform.machine_table W)) ->
+  app_subst (Platform.entry_arguments W C) (TAbs symbol) = TAbs symbol.
+Proof.
+  intros W f C symbol [_ [Keys [Read _]]] Machine. cbn [app_subst].
+  destruct (lookup_subst symbol (Platform.entry_arguments W C)) as [value|] eqn:Found; [|reflexivity].
+  assert (Present : In symbol (map fst (A.c_ty C))).
+  { rewrite <- Keys. apply lookup_subst_in_pair in Found.
+    change symbol with (fst (symbol, value)). now apply in_map. }
+  assert (ReadHere : A.nlook symbol (A.c_ty (Platform.entry_context W)) = Some (TAbs symbol)).
+  { unfold Platform.entry_context. cbn [A.c_ty]. apply identity_type_lookup, in_or_app. now left. }
+  specialize (Read symbol Present ltac:(rewrite ReadHere; discriminate)).
+  unfold A.canon. unfold A.canon in Read. cbn [app_subst A.c_sub] in Read.
+  rewrite Found, lookup_subst_nlook, ReadHere in Read. now injection Read.
+Qed.
+
+Lemma entry_caller_type : forall W symbol t,
+  Platform.Layouts W -> A.nlook symbol (A.c_ty (Platform.entry_context W)) = Some t ->
+  PublicFormation.TyOk W t.
+Proof.
+  intros W symbol t [Kinds _] Read. unfold Platform.entry_context in Read. cbn [A.c_ty] in Read.
+  apply identity_type_found in Read as [-> Member]. apply PublicFormation.tyok_abs.
+  assert (Kind : A.kind_sym W symbol = Some A.DKType).
+  { apply in_app_or in Member as [Machine|Memory].
+    - apply in_map_iff in Machine as [[x class] [<- Machine]]. unfold Platform.machine_table in Machine.
+      apply in_flat_map in Machine as [[name rep] [Named Row]].
+      cbn [fst snd] in Row.
+      destruct (A.w_library W) as [dir|] eqn:Library; [|contradiction].
+      destruct (A.w_scope W (dir ++ "wasm.moss") A.NSName name) as [[s|m]|] eqn:Scope; try contradiction.
+      destruct (A.w_decl W s) as [d|] eqn:Decl; [|contradiction].
+      destruct Row as [Equal|[]]. injection Equal as -> _.
+      eapply Kinds with (name := name).
+      + cbn in Named. repeat (destruct Named as [Equal|Named]; [injection Equal as <- _; cbn; tauto|]). contradiction.
+      + exists d, (dir ++ "wasm.moss"). repeat split; try assumption.
+        unfold A.LibraryModule. now rewrite Library.
+    - unfold AuditBase.wasm_symbol in Memory. destruct (A.w_library W) as [dir|] eqn:Library; [|contradiction].
+      destruct (A.w_scope W (dir ++ "wasm.moss") A.NSName "Memory") as [[s|m]|] eqn:Scope; try contradiction.
+      destruct (A.w_decl W s) as [d|] eqn:Decl; [|contradiction].
+      destruct Memory as [<-|[]]. eapply Kinds with (name := "Memory"); [cbn; tauto|].
+      exists d, (dir ++ "wasm.moss"). repeat split; try assumption.
+      unfold A.LibraryModule. now rewrite Library. }
+  unfold PublicFormation.Abstract. rewrite Kind. split; discriminate.
+Qed.
+
+Lemma entry_arguments_formed : forall bundle W f C needs,
+  A.WorldOf bundle W -> Platform.Layouts W -> A.CtxOf W f C needs ->
+  PublicFormation.TmOk W (Platform.entry_arguments W C).
+Proof.
+  intros bundle W f C needs World Layouts Ctx.
+  pose proof (PublicFormation.ctxof_cx_formed W (PublicWorldFormation.mentions_typed_of bundle W World) f C needs Ctx) as [Formed _].
+  destruct (ctxof_formed W f C needs Ctx) as [Table _].
+  set (caller := Platform.entry_context W).
+  assert (ReadHere : forall x, A.bound_in caller x = true ->
+    PublicFormation.TyOk W (A.read_here caller x)).
+  { intros x Present. unfold A.bound_in in Present. unfold A.read_here.
+    destruct (A.nlook x (A.c_ty caller)) as [t|] eqn:Found; [|discriminate].
+    unfold A.canon. cbn [A.c_sub app_subst].
+    rewrite lookup_subst_nlook, Found, app_subst_nil. eapply entry_caller_type; eassumption. }
+  assert (Class : forall z, PublicFormation.Abstract W z ->
+    PublicFormation.TyOk W (A.class_value caller C z)).
+  { intros z Ok. unfold A.class_value.
+    destruct (find (A.bound_in caller) (A.class_of C (TAbs z))) as [x|] eqn:Found; [|exact (PublicFormation.tyok_abs W z Ok)].
+    apply ReadHere. now apply find_some in Found as [_ Found]. }
+  intros x t InRow. unfold Platform.entry_arguments, A.call_type_arguments in InRow.
+  apply in_map_iff in InRow as [[y row] [Equal Member]]. injection Equal as <- <-.
+  unfold A.call_read. fold caller. destruct (A.bound_in caller y) eqn:Bound; [now apply ReadHere|].
+  assert (Ok : PublicFormation.TyOk W (A.canon C (TAbs y))).
+  { assert (Key : In y (map fst (A.c_ty C))) by (change y with (fst (y, row)); now apply in_map).
+    destruct (keys_in (A.c_ty C) y Key) as [read Found]. unfold A.canon. rewrite <- (Table y read Found).
+    exact (PublicFormation.cf_ty W C Formed y read (nlook_in _ _ _ _ Found)). }
+  destruct (A.canon C (TAbs y)) as [r|fields| |z|tag args|members] eqn:Read.
+  4: { apply Class. exact (proj2 Ok z (or_introl eq_refl)). }
+  all: unfold A.canon at 1; cbn [A.c_sub]; rewrite app_subst_nil.
+  all: apply PublicFormation.tyok_subst; [|exact Ok].
+  all: intros x t Row; apply in_map_iff in Row as [q [Equal InQ]]; injection Equal as -> <-;
+       apply Class; eapply (proj2 Ok); eassumption.
+Qed.
+
+(* Values and function signatures are read at the same call
+   instantiation as the body. *)
+Lemma entry_val_read : forall W C v,
+  A.nlook v (A.c_vals (Platform.entry_view W C)) =
+  option_map (app_subst (Platform.entry_arguments W C)) (A.nlook v (A.c_vals C)).
+Proof.
+  intros W C v. unfold Platform.entry_view, A.c_vals. cbn [A.c_provisions].
+  induction (A.c_provisions C) as [|[[x|x|x|r m th|x] [t a|g a|g a|fx]] rest IH];
+    cbn; try reflexivity; try exact IH. destruct (Nat.eqb v x); [reflexivity|exact IH].
+Qed.
+
+Lemma entry_fn_read : forall W C f,
+  A.nlook f (A.c_fns (Platform.entry_view W C)) =
+  option_map (A.sig_subst (Platform.entry_arguments W C)) (A.nlook f (A.c_fns C)).
+Proof.
+  intros W C f. unfold Platform.entry_view, A.c_fns. cbn [A.c_provisions].
+  induction (A.c_provisions C) as [|[[x|x|x|r m th|x] [t a|g a|g a|fx]] rest IH];
+    cbn; try reflexivity; try exact IH. destruct (Nat.eqb f x); [reflexivity|exact IH].
+Qed.
+
+Section Entry.
+Variables (W : A.world) (Prog : program) (argv : list (list int)) (read : list int -> option (list int)).
+Let P := program_of Prog argv read.
+Variable state_ok : heap_types -> M.ReferenceHost.mstate -> Prop.
+
+Lemma entry_absorbs : forall f C ns base arguments platform, A.CtxOf W f C ns ->
+  FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Absorbs C (Environment (map (fun q => (fst q, app_subst base (app_subst arguments (snd q)))) (A.c_ty C)) platform).
+Proof.
+  intros f C ns base arguments platform Ctx.
+  set (read_type := fun t => app_subst base (app_subst arguments t)).
   apply (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.absorbs_canon_iff C _
     (proj2 (function_context_merge W f C ns Ctx))).
   intros t. unfold ground, A.canon. cbn [type_meanings Environment].
   destruct (ctxof_formed W f C ns Ctx) as [Form Sub].
   pose proof (function_context_canonical W f C ns Ctx) as Idem.
-  set (types := map (fun q => (fst q, app_subst ms (snd q))) (A.c_ty C)).
-  assert (Lk : forall y, lookup_subst y types = option_map (app_subst ms) (A.nlook y (A.c_ty C))).
+  set (types := map (fun q => (fst q, read_type (snd q))) (A.c_ty C)).
+  assert (Lk : forall y, lookup_subst y types = option_map (read_type) (A.nlook y (A.c_ty C))).
   { intros y. unfold types. rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook. reflexivity. }
   rewrite <- (app_subst_nil t) at 2. apply subst2_agree. intros x _. cbn [app_subst lookup_subst].
   destruct (lookup_subst x (A.c_sub C)) as [u|] eqn:L; [|reflexivity].
@@ -71,7 +222,10 @@ Proof.
   rewrite Lk, Lv. cbn [option_map].
   assert (Fix : app_subst (A.c_sub C) u = u).
   { pose proof (Idem (TAbs x)) as I. unfold A.canon in I. cbn [app_subst] in I. rewrite L in I. exact I. }
-  apply subst_agree_on. intros y Iy. cbn [app_subst]. rewrite Lk.
+  unfold read_type. rewrite <- (app_subst_nil u) at 1.
+  apply subst2_agree. intros y Iy.
+  change (app_subst types (TAbs y) = read_type (TAbs y)).
+  cbn [app_subst]. rewrite Lk.
   destruct (keys_in (A.c_ty C) y (Su y Iy)) as [vy Ly]. rewrite Ly. cbn [option_map].
   rewrite (Form y vy Ly), (subst_fixed_gens u _ Fix y Iy). reflexivity.
 Qed.
@@ -95,36 +249,14 @@ Proof.
 Qed.
 
 (* A context's val types are canonical: read under its merges. *)
-Lemma ctx_val_canonical : forall f C ns v t a, A.CtxOf W f C ns ->
-  In (IVal v, A.ProvidedVal t a) (A.c_provisions C) -> A.canon C t = t.
-Proof.
-  intros f C ns v t a Ctx I. pose proof (function_context_canonical W f C ns Ctx) as Idem.
-  destruct Ctx as (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _ & _).
-  cbn [A.c_provisions A.entries_cx] in I. apply in_flat_map in I as [e [_ Ie]].
-  destruct e as [x|v' t0 a0|f' g a0|r m g a0|u fx|eql eqr]; cbn in Ie; try (destruct Ie as [E|[]]; discriminate); try contradiction.
-  destruct Ie as [E|[]]. injection E as -> <- _.
-  exact (Idem t0).
-Qed.
-
-(* A fixed machine type's class is the type alone, so a canonical context
-   reads it, and the fixed meaning, as itself. *)
-Lemma fixed_machine_self : forall C t x, canonical_context C ->
-  A.canon C t = A.canon C (TAbs x) -> (exists z, A.canon C (TAbs x) = TAbs z) ->
-  (forall y, A.canon C (TAbs y) = A.canon C (TAbs x) -> y = x) ->
-  A.canon C t = TAbs x.
-Proof.
-  intros C t x Can Et [z Ez] Only. rewrite Et, Ez. f_equal. apply Only.
-  rewrite <- Ez at 1. exact (Can (TAbs x)).
-Qed.
-
 (* The platform's provisions realize main's context, given the machine
    types' meanings and its primitives' callability. *)
 Lemma entry_realizes : forall n C ns types platform H0, Platform.Layouts W -> Platform.Representations W Prog ->
-  A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
+  A.CtxOf W (program_main Prog) C ns -> Platform.InitialTypes W (program_main Prog) C types ->
   map fst platform = map (A.rkey_of C) ns ->
   Forall (fun ie => Platform.Entry W Prog C (fst ie) (snd ie)) platform ->
   (forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
-     A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
+     A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
      FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk W Prog argv read state_ok n H0 (Environment types platform) (A.sg_params sg) (A.sg_ret sg)
        (PrimitiveClosure op None)) ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0.
@@ -137,8 +269,7 @@ Proof.
      Platform.Entry W Prog C (A.rkey_of C k) pv).
   { intros k Ik. assert (Im : In (A.rkey_of C k) (map fst platform)) by (rewrite Keys; apply in_map, Ik).
     destruct (lookup_entry_in _ _ Im) as [pv [L Ipv]]. exists pv. split; [exact L|exact (Entries _ Ipv)]. }
-  unfold AuditBase.initial_types in Types. subst types.
-  split; [exact (entry_absorbs _ C ns _ platform Ctx)|].
+  split; [destruct Types as [_ ->]; exact (entry_absorbs _ C ns _ _ platform Ctx)|].
   split; [|exact (conj (proj2 (function_context_merge W _ C ns Ctx)) KM)].
   split; [|split; [|split]].
   - intros v t Found. destruct (vals_ilook _ v t KM Found) as [a Il].
@@ -146,19 +277,20 @@ Proof.
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
     destruct w as [| | |[sort bits|]]; cbn in En; try contradiction.
     destruct sort; cbn in En; try contradiction. destruct En as [t' [Lt Mt]].
-    rewrite Found in Lt. injection Lt as <-. exists (VScalar 0 bits). split; [exact L|].
-    destruct Mt as [sym [Lang [_ ->]]].
-    pose proof (ctx_val_canonical _ C ns v _ a Ctx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as Canon.
-    destruct (ctx_provision_scoped W _ C ns Ctx _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Sc _].
-    assert (Isym : In sym (map fst (A.c_ty C))) by (apply Sc; cbn; left; reflexivity).
-    destruct (ctxof_formed W _ C ns Ctx) as [Form _].
-    destruct (keys_in (A.c_ty C) sym Isym) as [vs Ls]. pose proof (Form sym vs Ls) as Ev.
-    change (app_subst (A.c_sub C) (TAbs sym)) with (A.canon C (TAbs sym)) in Ev. rewrite Canon in Ev. subst vs.
-    unfold ground. cbn [type_meanings Environment app_subst].
-    rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook, Ls. cbn [option_map app_subst].
+    change (A.nlook v (A.c_vals (Platform.entry_view W C)) = Some t') in Lt.
+    rewrite entry_val_read, Found in Lt. injection Lt as <-.
+    exists (VScalar 0 bits). split; [exact L|].
+    destruct Mt as [sym [Lang [_ Read]]].
+    destruct (ctx_provision_scoped W _ C ns Ctx _ _
+      (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Scope _].
+    unfold provision_sig_gens, A.sig_gens in Scope. cbn in Scope. rewrite app_nil_r in Scope.
+    change (value_typed W P H0 (VScalar 0 bits) (app_subst types t)).
+    rewrite (entry_ground W _ C ns types t Ctx Types Scope), Read.
     assert (Class : A.nlook sym (program_machines Prog) = Some Platform.i32_class)
       by (eapply represented_machine; [exact Lay|exact Reps|left; reflexivity|exact Lang]).
-    rewrite (lookup_machine_subst _ _ (machine_lookup_in _ _ _ Class)). constructor. exact Class.
+    unfold Platform.Representations in Reps. rewrite Reps in Class.
+    cbn [app_subst]. rewrite (lookup_machine_subst _ _ (machine_lookup_in _ _ _ Class)).
+    constructor. change (A.nlook sym (program_machines Prog) = Some Platform.i32_class). now rewrite Reps.
   - intros f g Found. destruct (fns_ilook _ f g KM Found) as [a Il].
     destruct (Find (IFn f) (ProvNs _ _ (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il))) as [pv [L En]].
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u sms dc rms0|p held]; cbn in En; try contradiction.
@@ -172,36 +304,21 @@ Proof.
     cbn [A.rkey_of] in L, En. destruct pv as [w|f' df|u' sms dc rms0|p held]; cbn in En; try contradiction.
     destruct sms; [contradiction|]. destruct dc as [[|? ?] [|? ?] [|? ?]]; try contradiction. destruct rms0; [contradiction|].
     exists (FunctorClosure u' None (EnvironmentWithAliases [] [] []) None),
-      (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ground_fixed (map (fun q => (fst q, app_subst (AuditBase.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)) fx).
-    destruct (ctx_fun_fixed W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Cov [Sc Fun]].
-    split; [exact L|]. split; [apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CPlatform; [exact (proj1 En)| |]|].
-    { (* main's table reads a fixed machine input as its machine type *)
+      (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ground_fixed types fx).
+    pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) as Member.
+    destruct (ctx_fun_fixed W _ C ns Ctx u fx Member) as [Cov [Sc Fun]].
+    split; [exact L|]. split.
+    { apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CPlatform; [exact En|].
       intros x Inm Fx. destruct (Cov x Fx) as [tx Itx].
-      rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx x tx Fun Itx).
-      pose proof (ctx_fun_self W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) x tx Itx) as Etx.
-      destruct En as [_ FMR]. destruct (FMR fx Found x tx Inm Itx) as (Ct0 & Str & Only).
-      pose proof (fixed_machine_self C tx x (function_context_canonical W _ C ns Ctx) Ct0 Str Only) as Ct.
-      assert (Cx : A.canon C (TAbs x) = TAbs x).
-      { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
-        rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
-      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Etx. rewrite Cx in Etx. subst tx.
-      assert (Ix : In x (map fst (A.c_ty C))) by (apply (Sc x (TAbs x) Itx); left; reflexivity).
-      destruct (keys_in (A.c_ty C) x Ix) as [v Lv].
-      destruct (ctxof_formed W _ C ns Ctx) as [Form _]. pose proof (Form x v Lv) as Ev.
-      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ev. rewrite Cx in Ev. subst v.
-      cbn [app_subst]. rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook, Lv. cbn [option_map app_subst].
-      rewrite (lookup_machine_subst _ _ Inm). reflexivity. }
-    { (* the same, syntactically: main records a fixed machine input as itself *)
-      exists fx, (map (fun q => (fst q, app_subst (AuditBase.machine_subst (program_machines Prog)) (snd q))) (A.c_ty C)).
-      split; [reflexivity|]. split; [exact Cov|]. split; [exact Fun|].
-      intros x tx Inm Itx.
-      pose proof (ctx_fun_self W _ C ns Ctx u fx (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) x tx Itx) as Etx.
-      destruct En as [_ FMR]. destruct (FMR fx Found x tx Inm Itx) as (Ct0 & Str & Only).
-      pose proof (fixed_machine_self C tx x (function_context_canonical W _ C ns Ctx) Ct0 Str Only) as Ct.
-      assert (Cx : A.canon C (TAbs x) = TAbs x).
-      { rewrite Etx in Ct. change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Ct.
-        rewrite (function_context_canonical W _ C ns Ctx) in Ct. exact Ct. }
-      change (app_subst (A.c_sub C) (TAbs x)) with (A.canon C (TAbs x)) in Etx. rewrite Cx in Etx. exact Etx. }
+      rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed types fx x tx Fun Itx).
+      rewrite (entry_ground W _ C ns types tx Ctx Types (Sc x tx Itx)).
+      pose proof (ctx_fun_self W _ C ns Ctx u fx Member x tx Itx) as Read.
+      rewrite Read.
+      pose proof (proj2 (function_context_merge W _ C ns Ctx)) as Section.
+      rewrite <- (entry_read_merges W (program_main Prog) C (proj1 Types) _ _ (proj1 Section x)).
+      unfold Platform.Representations in Reps. rewrite Reps in Inm.
+      rewrite (entry_machine_argument W (program_main Prog) C x (proj1 Types) Inm).
+      cbn [app_subst]. now rewrite (lookup_machine_subst _ _ Inm). }
     split; [exact Cov|].
     intros x tx I. exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_ground_fixed _ fx x tx Fun I).
 Qed.
@@ -237,7 +354,7 @@ Lemma entry_pre : forall n F C ns g types platform H0 st0,
   PublicFormation.MentionsTyped W ->
   A.CtxOf W (program_main Prog) C ns -> FrameOk F -> A.fr_this F = None ->
   A.fr_ret F = Some (A.sg_ret g) -> A.SigOf W (program_main Prog) (A.c_ty C) None g ->
-  state_ok H0 st0 -> AuditBase.initial_types (program_machines Prog) C types -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
+  state_ok H0 st0 -> Platform.InitialTypes W (program_main Prog) C types -> FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Realizes W Prog argv read state_ok n C (Environment types platform) H0 ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Pre W Prog argv read state_ok n F C (Environment types platform) [] H0 [] st0.
 Proof.
   intros n F C ns g types platform H0 st0 Mt Ctx Frame This Ret Sig St Types Real.
@@ -248,25 +365,13 @@ Proof.
   - intros m t mu Found. rewrite (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ctxof_locals W _ C ns Ctx) in Found. discriminate.
   - split; [intros t E; congruence|]. apply FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.alias_none; [reflexivity|exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.realizes_absorbs_canon W Prog argv read state_ok _ _ _ _ Real)| |].
     + exact (proj1 (ctxof_formed W _ C ns Ctx)).
-    + unfold AuditBase.initial_types in Types. subst types. exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.keys_meant_map C _ (A.c_ty C) eq_refl).
+    + destruct Types as [_ ->]. unfold Platform.entry_types.
+      exact (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.keys_meant_map C (fun t => app_subst (AuditBase.machine_subst (Platform.machine_table W)) (app_subst (Platform.entry_arguments W C) t)) (A.c_ty C) eq_refl).
 Qed.
 End Entry.
 
 (* ---- the platform's primitives at the entry ----------------------------------- *)
 
-
-(* A context's fn signatures are canonical: read under its merges. *)
-Lemma ctx_fn_canonical : forall W f C ns g sg a, A.CtxOf W f C ns ->
-  In (IFn g, A.ProvidedFn sg a) (A.c_provisions C) ->
-  forall t, In t (A.sg_ret sg :: A.sg_params sg) -> A.canon C t = t.
-Proof.
-  intros W f C ns g sg a Ctx I t It. pose proof (function_context_canonical W f C ns Ctx) as Idem.
-  destruct Ctx as (d & es & tm & er & tmr & σ & classes & _ & _ & _ & _ & _ & _ & -> & _ & _).
-  cbn [A.c_provisions A.entries_cx] in I. apply in_flat_map in I as [e [_ Ie]].
-  destruct e as [x|v' t0 a0|f' g0 a0|r m g0 a0|u fx|eql eqr]; cbn in Ie; try (destruct Ie as [E|[]]; discriminate); try contradiction.
-  destruct Ie as [E|[]]. injection E as -> <- _. cbn [A.sg_ret A.sg_params] in It.
-  destruct It as [<-|It]; [exact (Idem _)|]. apply in_map_iff in It as [u [<- _]]. exact (Idem u).
-Qed.
 
 Lemma lookup_app : forall x (l m : subst),
   lookup_subst x (l ++ m)%list = match lookup_subst x l with Some v => Some v | None => lookup_subst x m end.
@@ -276,49 +381,37 @@ Proof. intros x l m. rewrite !lookup_subst_nlook. apply nlook_app'. Qed.
 Lemma entry_primitive : forall W Prog argv read iface C ns types platform n H0 f op sg,
   Platform.Layouts W -> Platform.Representations W Prog -> BoolSymbols W Prog ->
   M.interface_laws (program_of Prog argv read) iface -> M.supports iface op = true ->
-  A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
-  A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
-  Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg) ->
+  A.CtxOf W (program_main Prog) C ns -> Platform.InitialTypes W (program_main Prog) C types ->
+  A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
+  Forall (HandleFormed W) (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg)) ->
   FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk W Prog argv read (PS.state_ok W (program_of Prog argv read) iface) n H0
     (Environment types platform) (A.sg_params sg) (A.sg_ret sg) (PrimitiveClosure op None).
 Proof.
   intros W Prog argv read iface C ns types platform n H0 f op sg Lay Reps Bools Laws Supp Ctx Types Found At Formed.
-  destruct At as [sg' [Found' Sig]]. rewrite Found in Found'. injection Found' as <-.
+  destruct At as [sg' [Found' Sig]]. rewrite entry_fn_read, Found in Found'. injection Found' as <-.
   pose proof (ctx_keys_match W _ C ns Ctx) as KM.
-  destruct (fns_ilook _ f sg KM Found) as [a Il]. pose proof (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il) as InP.
-  destruct (ctx_provision_scoped W _ C ns Ctx _ _ InP) as [Sc _]. unfold provision_sig_gens in Sc. cbn in Sc.
-  pose proof (ctx_fn_canonical W _ C ns f sg a Ctx InP) as Canon.
-  destruct (ctxof_formed W _ C ns Ctx) as [Form _].
-  set (d0 := Environment types platform).
-  set (K := A.sig_gens sg).
-  set (m' := (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings d0 K ++ AuditBase.machine_subst (program_machines Prog))%list).
-  assert (OnK : forall x, In x K -> app_subst m' (TAbs x) = ground d0 (TAbs x)).
-  { intros x Ix. cbn [app_subst]. unfold m'. rewrite lookup_app, (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_capture d0 K x Ix). reflexivity. }
-  assert (SigK : forall t, In t (A.sg_ret sg :: A.sg_params sg) -> incl (A.gens t) K).
-  { intros t It x Ix. unfold K, A.sig_gens. apply in_flat_map. exists t. split; [exact It|exact Ix]. }
-  assert (G : forall t, In t (A.sg_ret sg :: A.sg_params sg) -> app_subst m' t = ground d0 t).
-  { intros t It. unfold ground. apply subst_agree_on. intros x Ix. exact (OnK x (SigK t It x Ix)). }
-  assert (Ground : MachinesGround Prog m').
-  { intros sym Inm. destruct (in_dec Nat.eq_dec sym K) as [Ik|Ok].
-    - rewrite (OnK sym Ik). unfold d0, ground. unfold AuditBase.initial_types in Types. subst types.
-      cbn [type_meanings Environment app_subst]. rewrite FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.lookup_map_snd, lookup_subst_nlook.
-      assert (Ikey : In sym (map fst (A.c_ty C))) by exact (Sc sym Ik).
-      destruct (keys_in (A.c_ty C) sym Ikey) as [v Lv]. rewrite Lv. cbn [option_map].
-      unfold K, A.sig_gens in Ik. apply in_flat_map in Ik as [t [It Ix]].
-      pose proof (subst_fixed_gens t (A.c_sub C) (Canon t It) sym Ix) as Fix.
-      rewrite (Form sym v Lv), Fix. cbn [app_subst]. rewrite (lookup_machine_subst _ _ Inm). reflexivity.
-    - cbn [app_subst]. unfold m'. rewrite lookup_app.
-      assert (Out : lookup_subst sym (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings d0 K) = None).
-      { unfold FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.capture_meanings. clear -Ok. induction K as [|y r IH]; [reflexivity|]. cbn.
-        destruct (Nat.eqb_spec sym y) as [->|_]; [exfalso; apply Ok; left; reflexivity|].
-        apply IH. intro I; apply Ok; right; exact I. }
-      rewrite Out, (lookup_machine_subst _ _ Inm). reflexivity. }
+  destruct (fns_ilook _ f sg KM Found) as [a Il].
+  destruct (ctx_provision_scoped W _ C ns Ctx _ _
+    (FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.ilook_in _ _ _ Il)) as [Sc _].
+  unfold provision_sig_gens in Sc. cbn in Sc.
+  set (actual := app_subst (Platform.entry_arguments W C)).
+  set (m := AuditBase.machine_subst (Platform.machine_table W)).
+  assert (Ground : MachinesGround Prog m).
+  { intros sym Inm. unfold Platform.Representations in Reps. rewrite Reps in Inm.
+    cbn [app_subst]. unfold m. now rewrite (lookup_machine_subst _ _ Inm). }
+  assert (G : forall t, In t (A.sg_ret sg :: A.sg_params sg) ->
+    app_subst types t = app_subst m (actual t)).
+  { intros t It. apply (entry_ground W _ C ns types t Ctx Types).
+    intros x Ix. apply Sc.
+    change (In x (flat_map A.gens (A.sg_ret sg :: A.sg_params sg))).
+    apply in_flat_map. now exists t. }
   cbn [FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk]. intros H st ws Ext St Args.
-  rewrite <- (G (A.sg_ret sg) (or_introl eq_refl)).
-  apply (PS.primitive_safe W Prog argv read iface op None (A.sg_params sg) (A.sg_ret sg) m' H st ws
-    Lay Reps Bools Laws Supp Sig Ground Formed I St).
+  change (ground (Environment types platform) (A.sg_ret sg)) with (app_subst types (A.sg_ret sg)).
+  rewrite (G _ (or_introl eq_refl)).
+  apply (PS.primitive_safe W Prog argv read iface op None (map actual (A.sg_params sg)) (actual (A.sg_ret sg))
+    m H st ws Lay Reps Bools Laws Supp Sig Ground Formed I St).
   clear -Args G. induction Args as [|w t ws ts T Rest IH]; constructor.
-  - rewrite G; [exact T|right; left; reflexivity].
+  - rewrite <- G; [exact T|right; left; reflexivity].
   - apply IH. intros t' It'. apply G. destruct It' as [<-|It']; [left; reflexivity|right; right; exact It'].
 Qed.
 
@@ -467,10 +560,10 @@ Theorem entry_safe : forall prelude
      (forall k, FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.Safe W Prog (M.arguments initial) (M.read_file initial) (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
      PublicFormation.MentionsTyped W /\
      exists H0, state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface H0 (iface, initial) /\
-       forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> AuditBase.initial_types (program_machines Prog) C types ->
+       forall n C ns types platform, A.CtxOf W (program_main Prog) C ns -> Platform.InitialTypes W (program_main Prog) C types ->
          program_environment Prog = Environment types platform ->
          forall f op sg, In (IFn f, PrimitiveClosure op None) platform ->
-         A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W C (IFn f) op ->
+         A.nlook f (A.c_fns C) = Some sg -> Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
          FCp.CRz.CSg.FL.CF.CN.CC.LR.PA.FS.CopyA.S.CallableOk W Prog (M.arguments initial) (M.read_file initial)
            (state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) n H0
            (Environment types platform) (A.sg_params sg) (A.sg_ret sg) (PrimitiveClosure op None)) ->
@@ -504,7 +597,8 @@ Theorem entry_safe_public : forall prelude,
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
      PublicFormation.MentionsTyped W /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
-        Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
+        Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
+        Forall (HandleFormed W) (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg)))) ->
   SR.entry_never_stuck prelude.
 Proof.
   intros prelude Remaining. apply (entry_safe prelude PS.state_ok).
@@ -531,7 +625,8 @@ Theorem safety_public : forall prelude,
         (PS.state_ok W (program_of Prog (M.arguments initial) (M.read_file initial)) iface) k) /\
      PublicFormation.MentionsTyped W /\
      (forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
-        Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg))) ->
+        Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
+        Forall (HandleFormed W) (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg)))) ->
   forall program interface initial,
     M.Admissible prelude program -> M.Compatible program interface ->
     forall code final, ~ M.Runs program interface initial (M.Result (M.Wrong code) final).
@@ -541,18 +636,23 @@ Proof. intros prelude Remaining. exact (SR.safety_from_entry prelude (entry_safe
    (Platform.HandlesRead), and is formed, since main's context is. *)
 Theorem handles_formed : forall bundle W Prog, A.ElaboratesIn bundle W Prog -> Platform.Linked W Prog ->
   forall C ns f sg op, A.CtxOf W (program_main Prog) C ns -> A.nlook f (A.c_fns C) = Some sg ->
-    Platform.AtKey W C (IFn f) op -> Forall (HandleFormed W) (A.sg_ret sg :: A.sg_params sg).
+    Platform.AtKey W (Platform.entry_view W C) (IFn f) op ->
+        Forall (HandleFormed W) (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg)).
 Proof.
   intros bundle W Prog Elab Link C ns f sg op Ctx Found _.
   destruct Elab as (resolve & Wo & _ & _ & _ & (C0 & ns0 & types & platform & Ctx0 & Env & Keys) & _).
-  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & _ & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
+  destruct (proj1 (platform_linked_fields _ _) Link) as (_ & Layouts & _ & C' & ns' & types' & entries & Ctx' & _ & Env' & Entries & _).
   destruct (function_context_unique W _ C0 ns0 C ns Ctx0 Ctx) as [-> ->].
   destruct (function_context_unique W _ C' ns' C ns Ctx' Ctx) as [-> ->].
   rewrite Env in Env'. injection Env' as <- <-.
   pose proof (PublicFormation.ctxof_cx_formed W
     (PublicWorldFormation.mentions_typed_of bundle W Wo) _ C ns Ctx) as Fc.
-  pose proof (PublicFormation.fns_ok W C f sg (proj1 Fc) Found) as [Fp Fr].
-  assert (Formed : Forall (PublicFormation.TyOk W) (A.sg_ret sg :: A.sg_params sg)) by (constructor; assumption).
+  pose proof (PublicFormation.fns_ok W C f sg (proj1 Fc) Found) as Sig.
+  pose proof (PublicFormation.sigok_subst W _ sg
+    (entry_arguments_formed bundle W _ C ns Wo Layouts Ctx) Sig) as [Params Result].
+  assert (Formed : Forall (PublicFormation.TyOk W)
+    (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg)))
+    by (constructor; assumption).
   pose proof (ctx_keys_match W _ C ns Ctx) as KM.
   destruct (ctx_needs W _ C ns Ctx) as [_ [ProvNs _]].
   destruct (fns_ilook _ f sg KM Found) as [a Il].
@@ -561,7 +661,13 @@ Proof.
   apply in_map_iff in Im as [[k pv] [Ek Ie]]. cbn in Ek. subst k.
   rewrite Forall_forall in Entries. pose proof (Entries _ Ie) as En. cbn in En.
   destruct pv as [w|f' df|u sms dc rms0|p held]; try contradiction. destruct held; try contradiction.
-  destruct En as [_ Raw]. pose proof (Raw sg Found) as Raws.
+  destruct En as [_ Raw].
+  assert (SigRead : A.nlook f (A.c_fns (Platform.entry_view W C)) =
+    Some (A.sig_subst (Platform.entry_arguments W C) sg)).
+  { now rewrite entry_fn_read, Found. }
+  pose proof (Raw _ SigRead) as Raws.
+  change (Forall (Platform.RawHandleRead W)
+    (map (app_subst (Platform.entry_arguments W C)) (A.sg_ret sg :: A.sg_params sg))) in Raws.
   rewrite Forall_forall in Formed, Raws |- *. intros t It name param handle symbol args Tag Sym ->.
   split.
   - destruct (Formed _ It) as [Ft _]. exact (proj1 (proj1 (PublicFormation.nom_formed W symbol args) Ft)).

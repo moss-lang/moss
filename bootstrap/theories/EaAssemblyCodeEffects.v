@@ -113,7 +113,6 @@ Proof.
   - apply code_effect_bind; [apply code_effect_lift|]. intro declaration.
     destruct (d_ast declaration) as [| | | | | | | |name parameters arguments results body]; try apply code_effect_fail.
     destruct body; [apply code_effect_fail|].
-    apply code_effect_bind; [apply code_effect_check|intros []].
     apply code_effect_bind; [apply code_effect_pure|]. intro body.
     apply code_effect_bind; [exact (code_effect_emit FunctorTable _)|].
     intro slot. apply code_effect_return.
@@ -123,6 +122,8 @@ Lemma main_environment_code_effect : forall E main, PreservesOldCode (EaPlatform
 Proof.
   intros E main. unfold EaPlatform.main_environment.
   apply code_effect_bind; [apply code_effect_lift|]. intros [context needs].
+  apply code_effect_bind; [apply code_effect_pure|intros []].
+  apply code_effect_bind; [apply code_effect_pure|intro types].
   apply code_effect_bind.
   { apply code_effect_mmap. intro key.
     apply code_effect_bind; [apply platform_entry_code_effect|]. intro provided.

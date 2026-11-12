@@ -234,7 +234,7 @@ Proof.
   set (caller := family_context C matching) in *.
   set (th := map (fun q => (fst q, canon caller (app_subst (c_ty caller) (TAbs (fst q))))) (c_ty formal')) in *.
   apply rbind_ok in Run as (bound_types & Read & Run).
-  destruct (find (fun q => negb (EaCall.bound_in caller (fst q))) (c_ty formal'))
+  destruct (find (fun q => negb (bound_in caller (fst q))) (c_ty formal'))
     as [[missing missing_type]|] eqn:InForce; [discriminate Read|].
   clear Read.
   apply rbind_ok in Run as (fixed_types & Read & Run).
@@ -269,7 +269,7 @@ Proof.
     cbn [fst] in Equal. subst t.
     change (nlook x (c_ty caller) = None) in Absent.
     pose proof (find_none _ _ InForce (x, ty) Present) as Bound.
-    apply negb_false_iff in Bound. unfold EaCall.bound_in in Bound.
+    apply negb_false_iff in Bound. unfold bound_in in Bound.
     change (is_some (nlook x (c_ty caller)) = true) in Bound.
     rewrite Absent in Bound. discriminate Bound. }
   split.

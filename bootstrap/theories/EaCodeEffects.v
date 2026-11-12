@@ -369,7 +369,7 @@ Proof.
   apply code_effect_bind.
   { destruct outs; [apply code_effect_return|apply code_effect_require_allocation_floor]. }
   intros []. apply code_effect_mmap. intro output. unfold EaFunctor.allocate_output.
-  destruct (EaCall.bound_in C output || nmem output (context_gens C ++ key_receiver_gens C))%bool.
+  destruct (bound_in C output || nmem output (context_gens C ++ key_receiver_gens C))%bool.
   - apply code_effect_bind; [apply code_effect_fresh|]. intro generation.
     apply code_effect_bind; [apply code_effect_put_name|intro named; apply code_effect_return].
   - match goal with

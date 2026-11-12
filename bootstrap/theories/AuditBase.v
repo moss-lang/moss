@@ -42,10 +42,6 @@ Import Semantics.
 Definition machine_subst (machines : list (tsym * machine_class)) : subst :=
   map (fun q => (fst q, TRigid (fst q))) machines.
 
-Definition initial_types (machines : list (tsym * machine_class))
-    (C : Elaboration.cx) (types : subst) : Prop :=
-  types = map (fun q => (fst q, app_subst (machine_subst machines) (snd q))) (Elaboration.c_ty C).
-
 Module WasmOps.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -654,6 +650,17 @@ Definition prim_msig (p : wasm_prim) : option (list shape * shape) :=
 End WasmSignatures.
 Export WasmSignatures.
 
+Definition wasm_symbol (W : Elaboration.world) (name : string) : option nat :=
+  match Elaboration.w_library W with
+  | Some dir =>
+      match Elaboration.w_scope W (String.append dir "wasm.moss") Elaboration.NSName name with
+      | Some (Elaboration.ESym symbol) =>
+          match Elaboration.w_decl W symbol with Some _ => Some symbol | None => None end
+      | _ => None
+      end
+  | None => None
+  end.
+
 (* Bounds needed by Base's native representation and specialization. *)
 Module Compilation.
 Import Input Elaboration.
@@ -901,17 +908,6 @@ Definition FiniteLayouts (W : world) : Prop :=
 
 (* The Wasm library's reference constructors and their raw payload
    parameters. Resolve these once from the source world during linking. *)
-Local Definition wasm_symbol (W : world) (name : string) : option nat :=
-  match w_library W with
-  | Some dir =>
-      match w_scope W (String.append dir "wasm.moss") NSName name with
-      | Some (ESym symbol) =>
-          match w_decl W symbol with Some _ => Some symbol | None => None end
-      | _ => None
-      end
-  | None => None
-  end.
-
 Local Definition reference_handles (W : world) : list (nsym * tsym) :=
   flat_map (fun '(name, raw) =>
     match wasm_symbol W name, wasm_symbol W raw with
@@ -991,6 +987,37 @@ Definition machine_table (W : world) : list (tsym * machine_class) :=
         | Some _ => [(symbol, snd q)]
         | None => [] end
       | _ => [] end end) initial_machines.
+
+(* The type part of the context from which Base calls main. The
+   memory identity belongs to this context even though it has no value
+   representation. *)
+Definition entry_context (W : world) : cx :=
+  let symbols := map fst (machine_table W) ++
+    match wasm_symbol W "Memory" with Some memory => [memory] | None => [] end in
+  Cx (map (fun symbol => (symbol, TAbs symbol)) symbols) [] [] [] [].
+
+Definition entry_arguments (W : world) (C : cx) : subst :=
+  let caller := entry_context W in
+  call_type_arguments caller C (class_value caller C).
+
+Definition EntryTypeMatch (W : world) (main : fsym) (C : cx) : Prop :=
+  RequirementsInForce (entry_context W) C /\
+  CallTheta W (entry_context W) C main (entry_arguments W C).
+
+Definition entry_types (W : world) (C : cx) : subst :=
+  let arguments := entry_arguments W C in
+  map (fun q => (fst q, app_subst (machine_subst (machine_table W))
+    (app_subst arguments (snd q)))) (c_ty C).
+
+Definition InitialTypes (W : world) (main : fsym) (C : cx) (types : subst) : Prop :=
+  EntryTypeMatch W main C /\ types = entry_types W C.
+
+(* The value and operation signatures main needs, interpreted at the
+   types of this call. *)
+Definition entry_view (W : world) (C : cx) : cx :=
+  let arguments := entry_arguments W C in
+  Cx [] [] []
+    (map (fun q => (fst q, provision_subst arguments (snd q))) (c_provisions C)) [].
 
 Definition MachineType (W : world) (name : string) (t : ty) : Prop :=
   exists symbol, LangSym W "wasm" NSName name symbol /\
@@ -1170,25 +1197,6 @@ Definition Family (W : world) (P : program) (source code : usym) : Prop :=
     (forall d ps a r b, w_decl W source = Some d -> functor_parts (d_ast d) = Some (ps, a, r, b) -> b = None) /\
     NoDup (map provision_id keys).
 
-(* main's context reads each machine type a platform functor fixes as
-   itself (the oracle's check_platform_entry_view: "platform functor has an
-   incompatible assumed fixed type"): the platform's provision exists only
-   at the machine types, so a merge of main's context may not read one as
-   another type.  Stated by class (criteria section 2, coherence): the
-   fixed meaning t is in the machine type's merge class, and that class is
-   the machine type alone, with no structure.  A class merging the machine
-   type with another symbol is rejected whichever member represents it
-   (both implementations reject it, in either order:
-   examples/platform-fixed-merge-{xi,ix}.moss); before, the clause asked
-   `canon C t = TAbs symbol`, which held exactly when the machine type
-   was the representative.  The classes do not depend on that choice
-   (PublicOrientation.mgm_classes_iff). *)
-Definition FixedMachinesRead (P : program) (C : cx) (source : usym) : Prop :=
-  forall fixed, nlook source (c_funs C) = Some fixed ->
-  forall symbol t, In symbol (map fst (program_machines P)) -> In (symbol, t) fixed ->
-    canon C t = canon C (TAbs symbol) /\ (exists z, canon C (TAbs symbol) = TAbs z) /\
-    (forall y, canon C (TAbs y) = canon C (TAbs symbol) -> y = symbol).
-
 (* [D79]/platform: main's initial environment.  Each need of main must be
    something the platform provides (ElaboratesIn keys the environment by
    main's needs; this is what each provision is, AUDIT-CHANGES #91):
@@ -1214,10 +1222,11 @@ Definition Entry (W : world) (P : program) (C : cx)
     (key : item) (value : provision_value) : Prop :=
   match key, value with
   | IVal value, ValueProvision (VScalar 0 _) => exists t,
-      nlook value (c_vals C) = Some t /\ MachineType W "I32" t
-  | IFn _, PrimitiveClosure operation None => AtKey W C key operation /\ HandlesRead W C key
+      nlook value (c_vals (entry_view W C)) = Some t /\ MachineType W "I32" t
+  | IFn _, PrimitiveClosure operation None =>
+      AtKey W (entry_view W C) key operation /\ HandlesRead W (entry_view W C) key
   | IFun source, FunctorClosure code None (EnvironmentWithAliases [] [] []) None =>
-      Family W P source code /\ FixedMachinesRead P C source
+      Family W P source code
   | _, _ => False
   end.
 
@@ -1271,7 +1280,7 @@ Definition root_item : option (string * name) := Some ("wasm", "Gc").
 Module Static <: STATIC_PLATFORM.
   Definition root_item := root_item.
   Definition Tables := Tables.
-  Definition InitialTypes (_ : world) (P : program) := initial_types (program_machines P).
+  Definition InitialTypes := InitialTypes.
   Definition Provides := Provides.
   Definition EntryABI := EntryABI.
   Definition Admissible := Compilation.Admissible.

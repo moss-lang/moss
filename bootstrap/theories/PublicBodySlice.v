@@ -140,16 +140,6 @@ Definition PlatformFixed (u : nat) (gfx : subst) : Prop :=
   forall x, In x (map fst (program_machines Prog)) ->
     A.Fixed W u x -> lookup_subst x gfx = Some (TRigid x).
 
-(* PlatformFixed syntactically: the context the family was provided in
-   (main's) records each fixed machine-type input as itself, and gfx is
-   that record read by some meanings. *)
-Definition PlatformRead (u : nat) (gfx : subst) : Prop :=
-  exists fx gm, gfx = ground_fixed gm fx /\
-    (forall x, A.Fixed W u x -> exists tx, In (x, tx) fx) /\
-    (forall x t t', In (x, t) fx -> In (x, t') fx -> t = t') /\
-    (forall x tx, In x (map fst (program_machines Prog)) ->
-       In (x, tx) fx -> tx = TAbs x).
-
 (* A copy `bind u = h;` at its site C1, syntactically (BFunCopy): fx is
    u's fixed readings in C1 (what set_fun records), CopyInterpretation compares
    at them read canonically, gfx is them read by d (which realizes C1);
@@ -215,7 +205,7 @@ Inductive ClosureOk (n : nat) (H0 : heap_types) : nat -> subst -> provision_valu
     CopySite u h Cu nsu nsh Ch rm target gfx gfh ->
     ClosureOk n H0 u gfx (FunctorClosure code
       (compose_adaptation sms (map (fun k => (A.rkey_of Ch k, A.rkey_of Cu (target k))) nsh)) dc (compose_positions rms rm))
-| CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx -> PlatformRead u gfx ->
+| CPlatform : forall u code gfx, Platform.Family W Prog u code -> PlatformFixed u gfx ->
     ClosureOk n H0 u gfx (FunctorClosure code None (EnvironmentWithAliases [] [] []) None)
 with CapturedFuns (n : nat) (H0 : heap_types) : subst -> environment -> list (nat * subst) -> Prop :=
 | CFNil : forall gm dc, CapturedFuns n H0 gm dc []
@@ -532,7 +522,7 @@ Proof.
       exact (callable_lower_extends _ _ _ _ _ _ _ _ Le Ext Ok).
   - intros u h Cu nsu Ch nsh target code sms dc rms rm gfx gfh _ IH FCu FCh Incl Fx CO Sub SO Site.
     exact (CCopy m H1 u h Cu nsu Ch nsh target code sms dc rms rm gfx gfh IH FCu FCh Incl Fx CO Sub SO Site).
-  - intros u code gfx Fam Mach PR. exact (CPlatform m H1 u code gfx Fam Mach PR).
+  - intros u code gfx Fam Mach. exact (CPlatform m H1 u code gfx Fam Mach).
   - intros gm dc. constructor.
   - intros gm dc u fx pv gfx rest Look _ IH1 Fx _ IH2. exact (CFCons m H1 gm dc u fx pv gfx rest Look IH1 Fx IH2).
 Qed.
@@ -4420,7 +4410,7 @@ Lemma closure_link_abstract : forall n H0 u gfx h sm dc, ClosureOk n H0 u gfx (F
   exists n ps a r, A.ast_of W u = Some (ADFunctor n ps a r None).
 Proof.
   intros n H0 u gfx h sm dc Ok. inversion Ok as [u' gg h' Cu nsu Cg nsg linktarget dc' gfx' pins LB Binding FCu FCg FxIn AbU Caps CF PinsOk
-    |u' h' Cu nsu Ch nsh target code sms dc' rms rm gfx' gfh Okh FCu FCh Incl Fx CO InCu Same Site|u' code gfx' Fam Mach PR]; subst.
+    |u' h' Cu nsu Ch nsh target code sms dc' rms rm gfx' gfh Okh FCu FCh Incl Fx CO InCu Same Site|u' code gfx' Fam Mach]; subst.
   exact AbU.
 Qed.
 

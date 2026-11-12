@@ -1083,13 +1083,13 @@ assume Std {
     }
 
     # Check the actual entry view against the fixed machine representation.
-    fn runtime_entry_scalar(t: Int, k: Int, sym: Int): Bool {
+    fn runtime_entry_scalar(t: Int, k: Int): Bool {
       if k == 0 { return t == types::ty_unit(); }
-      if k == 5 { return t == lower::canon(lower::env_of(sym), cg_boolty.read()); }
-      t == lower::canon(lower::env_of(sym), wasm_type(k - 1))
+      if k == 5 { return t == cg_boolty.read(); }
+      t == wasm_type(k - 1)
     }
 
-    fn runtime_entry_args(sym: Int, args: Int, result: Int, env: Int): Bool {
+    fn runtime_entry_args(sym: Int, args: Int, result: Int, env: Int, types_here: Int): Bool {
       let row = lower::env_find(env, lower::ek_fn(), ast::none(), sym);
       if !ast::is_some(row) { return false; }
       let view = lower::env_a_of(row);
@@ -1099,13 +1099,13 @@ assume Std {
       var schema = args;
       while schema > 0 {
         if i >= ast::fn_nparams(d) { return false; }
-        let t = lower::canon(env, sig_ty(view, ast::b_of(ast::kid_at(ast::fn_params(d), i)), m, types::ty_never()));
-        if !runtime_entry_scalar(t, schema % 8, sym) { return false; }
+        let t = lower::canon(types_here, sig_ty(view, ast::b_of(ast::kid_at(ast::fn_params(d), i)), m, types::ty_never()));
+        if !runtime_entry_scalar(t, schema % 8) { return false; }
         schema = schema / 8;
         i = i + 1;
       }
       if i != ast::fn_nparams(d) { return false; }
-      runtime_entry_scalar(lower::canon(env, sig_ty(view, ast::fn_ret(d), m, types::ty_never())), result, sym)
+      runtime_entry_scalar(lower::canon(types_here, sig_ty(view, ast::fn_ret(d), m, types::ty_never())), result)
     }
 
     fn runtime_machine_symbol(sym: Int): Bool {
@@ -1119,10 +1119,10 @@ assume Std {
       false
     }
 
-    fn runtime_entry_view(sym: Int, env: Int) {
-      if in_wasi(sym) { runtime_wasi(sym, env, true); }
+    fn runtime_entry_view(sym: Int, env: Int, types_here: Int) {
+      if in_wasi(sym) { runtime_wasi(sym, env, types_here, true); }
       if is_i32_bool(sym) {
-        if !runtime_entry_args(sym, 1, 5, env) { runtime_shape_error(sym); }
+        if !runtime_entry_args(sym, 1, 5, env, types_here) { runtime_shape_error(sym); }
       }
       if !in_wasm(sym) { return (); }
       if prog::sym_kind.get(sym) == prog::sk_functor() {
@@ -1136,8 +1136,8 @@ assume Std {
           if runtime_machine_symbol(t) {
             let have = lower::app_get(lower::env_b_of(row), t, env);
             if !ast::is_some(have) { runtime_shape_error(sym); return (); }
-            let actual = lower::canon(env, have);
-            if (actual != types::ty_of_decl(t)) & (actual != lower::as_assumed(t)) {
+            let actual = lower::canon(types_here, have);
+            if actual != types::ty_of_decl(t) {
               runtime_shape_error(sym);
             }
           }
@@ -1151,13 +1151,13 @@ assume Std {
         if (wops::op_kinds.get(op) == wops::wk_const0()) | (wops::op_kinds.get(op) == wops::wk_const1()) {
           let row = lower::env_find(env, lower::ek_val(), ast::none(), sym);
           if !ast::is_some(row) { runtime_shape_error(sym); return (); }
-          if !runtime_entry_scalar(lower::canon(env, lower::env_a_of(row)), 1, sym) { runtime_shape_error(sym); }
+          if !runtime_entry_scalar(lower::canon(types_here, lower::env_a_of(row)), 1) { runtime_shape_error(sym); }
         }
       } else if prog::sym_kind.get(sym) == prog::sk_fn() {
         if (wops::op_codes.get(op) == 0) & (wops::op_kinds.get(op) == wops::wk_simple()) {
           return ();
         }
-        if !runtime_entry_args(sym, wops::op_args.get(op), wops::op_res.get(op), env) { runtime_shape_error(sym); }
+        if !runtime_entry_args(sym, wops::op_args.get(op), wops::op_res.get(op), env, types_here) { runtime_shape_error(sym); }
       }
     }
 
@@ -1440,17 +1440,17 @@ assume Std {
       }
     }
 
-    fn runtime_named(sym: Int, name: IntList, args: Int, result: Int, env: Int, entry: Bool) {
+    fn runtime_named(sym: Int, name: IntList, args: Int, result: Int, env: Int, types_here: Int, entry: Bool) {
       if sym_named(sym, name) {
         if entry {
-          if !runtime_entry_args(sym, args, result, env) { runtime_shape_error(sym); }
+          if !runtime_entry_args(sym, args, result, env, types_here) { runtime_shape_error(sym); }
         } else {
           if !runtime_args(sym, args, result, env) { runtime_shape_error(sym); }
         }
       }
     }
 
-    fn runtime_wasi(sym: Int, env: Int, entry: Bool) {
+    fn runtime_wasi(sym: Int, env: Int, types_here: Int, entry: Bool) {
       { let n = spelled();
         push_char(n, char::f);
         push_char(n, char::d);
@@ -1460,7 +1460,7 @@ assume Std {
         push_char(n, char::i);
         push_char(n, char::t);
         push_char(n, char::e);
-        runtime_named(sym, n, 585, 1, env, entry);
+        runtime_named(sym, n, 585, 1, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::f);
@@ -1470,7 +1470,7 @@ assume Std {
         push_char(n, char::e);
         push_char(n, char::a);
         push_char(n, char::d);
-        runtime_named(sym, n, 585, 1, env, entry);
+        runtime_named(sym, n, 585, 1, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::p);
@@ -1482,7 +1482,7 @@ assume Std {
         push_char(n, char::x);
         push_char(n, char::i);
         push_char(n, char::t);
-        runtime_named(sym, n, 1, 0, env, entry);
+        runtime_named(sym, n, 1, 0, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::a);
@@ -1499,7 +1499,7 @@ assume Std {
         push_char(n, char::g);
         push_char(n, char::e);
         push_char(n, char::t);
-        runtime_named(sym, n, 9, 1, env, entry);
+        runtime_named(sym, n, 9, 1, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::a);
@@ -1510,7 +1510,7 @@ assume Std {
         push_char(n, char::g);
         push_char(n, char::e);
         push_char(n, char::t);
-        runtime_named(sym, n, 9, 1, env, entry);
+        runtime_named(sym, n, 9, 1, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::f);
@@ -1521,7 +1521,7 @@ assume Std {
         push_char(n, char::o);
         push_char(n, char::s);
         push_char(n, char::e);
-        runtime_named(sym, n, 1, 1, env, entry);
+        runtime_named(sym, n, 1, 1, env, types_here, entry);
       }
       { let n = spelled();
         push_char(n, char::p);
@@ -1533,14 +1533,14 @@ assume Std {
         push_char(n, char::p);
         push_char(n, char::e);
         push_char(n, char::n);
-        runtime_named(sym, n, 19468873, 1, env, entry);
+        runtime_named(sym, n, 19468873, 1, env, types_here, entry);
       }
     }
 
     fn runtime_primitive(sym: Int) {
         let kind = prog::sym_kind.get(sym);
         if !runtime_gc_method(sym) { runtime_shape_error(sym); }
-        if in_wasi(sym) { runtime_wasi(sym, lower::env_of(sym), false); }
+        if in_wasi(sym) { runtime_wasi(sym, lower::env_of(sym), lower::env_empty(), false); }
         if is_i32_bool(sym) {
           if !runtime_args(sym, 1, 5, lower::env_of(sym)) { runtime_shape_error(sym); }
         }
@@ -3304,7 +3304,7 @@ assume Std {
         if in_wasm(sym) {
           return op_result(wops::find_op(prog::sym_name.get(sym)));
         }
-        if in_wasi(sym) { runtime_wasi(sym, lower::env_of(sym), false); }
+        if in_wasi(sym) { runtime_wasi(sym, lower::env_of(sym), lower::env_empty(), false); }
         if is_i32_bool(sym) {
           return cg_boolty.read();
         }
@@ -10010,25 +10010,70 @@ assume Std {
 
     fn heap_pointer(): Int { 16 }
 
-    # What `main` is specialized in: nothing, but for the one platform
-    # type a program may rebind (D79). `Memory` there is the main memory,
-    # a symbol of its own that no environment binds — not `Memory`, which
-    # a later `bind Memory = Scratch;` would reach back into, nor its
-    # parameter, which a callee generic over `Memory` binds to its own
-    # (D72) — so that `bind Source = Memory;` in `main` names the main
-    # memory wherever it is read.
-    fn root_env(): Int {
-      let mem = cg_memory.read();
-      if !ast::is_some(mem) {
-        return lower::env_empty();
+    # The types supplied by Base at the call of main. The main memory
+    # has a closed identity of its own, as do the machine representations.
+    fn entry_caller(): Int {
+      let symbols = int_list();
+      var k = 0;
+      while k < 4 {
+        let name = spelled();
+        spell_scalar(name, k);
+        let sym = wasm_symbol(name);
+        if ast::is_some(sym) { symbols.push(sym); }
+        k = k + 1;
       }
-      let given = main_memory();
-      let env = lower::env_push(
-        lower::env_empty(), lower::ek_type(), ast::none(), mem, given, ast::none()
-      );
-      lower::env_push(
-        env, lower::ek_type(), ast::none(), prog::param_of(mem), given, ast::none()
-      )
+      if ast::is_some(cg_structref.read()) { symbols.push(cg_structref.read()); }
+      if ast::is_some(arrayref_sym()) { symbols.push(arrayref_sym()); }
+      var env = lower::env_empty();
+      k = 0;
+      while k < symbols.length() {
+        let sym = symbols.get(k);
+        env = lower::env_push(env, lower::ek_type(), ast::none(), sym, types::ty_of_decl(sym), ast::none());
+        k = k + 1;
+      }
+      let mem = cg_memory.read();
+      if ast::is_some(mem) {
+        env = lower::env_push(env, lower::ek_type(), ast::none(), mem, main_memory(), ast::none());
+      }
+      env
+    }
+
+    # Instantiate main just as a callee, including requirements supplied
+    # through its merge classes. Check each known caller type against
+    # that reading so a class with an unbound representative still has
+    # to agree at every member that Base supplies.
+    fn entry_types(main: Int, caller: Int): Int {
+      let formal = lower::env_of(main);
+      let members = int_list();
+      var e = formal;
+      while ast::is_some(e) {
+        if lower::env_kind_of(e) == lower::ek_type() {
+          types::push_new(members, lower::env_sym_of(e));
+        }
+        e = lower::env_next_of(e);
+      }
+      let given = int_list();
+      var env = lower::env_empty();
+      var i = 0;
+      while i < members.length() {
+        let symbol = members.get(i);
+        let ty = types::ty_of_decl(symbol);
+        let actual = callee_read(caller, formal, lower::as_assumed(symbol));
+        let supplied = lower::env_find(caller, lower::ek_type(), ast::none(), symbol);
+        if ast::is_some(supplied) {
+          if actual != lower::env_a_of(supplied) {
+            prog::error(prog::e_merge(), prog::sym_mod.get(main), prog::sym_name.get(symbol));
+          }
+        } else if !in_force_through(symbol, caller, given, formal, members) {
+          prog::error(prog::e_absent(), prog::sym_mod.get(main), prog::sym_name.get(symbol));
+        }
+        if actual != ty {
+          env = lower::env_push(env, lower::ek_type(), ast::none(), symbol, actual, ast::none());
+        }
+        env = lower::env_push(env, lower::ek_type(), ast::none(), prog::param_of(symbol), actual, ast::none());
+        i = i + 1;
+      }
+      env
     }
 
     fn main_memory(): Int {
@@ -10079,11 +10124,16 @@ assume Std {
         return ();
       }
       cg_real.write(1);
+      let entry_env = entry_types(main, entry_caller());
       var rk = 0;
       while rk < lower::needs_count(main) {
         let key = lower::need_sym_at(main, rk);
-        runtime_primitive(key);
-        runtime_entry_view(key, lower::env_of(main));
+        if in_wasm(key) | in_wasi(key) | is_i32_bool(key) {
+          runtime_primitive(key);
+          runtime_entry_view(key, lower::env_of(main), entry_env);
+        } else {
+          prog::error(prog::e_absent(), prog::sym_mod.get(main), prog::sym_name.get(key));
+        }
         rk = rk + 1;
       }
       # D39: `main` takes no parameters and returns the unit type, which
@@ -10103,7 +10153,7 @@ assume Std {
       # `main` assumes only the primitive context, so it starts empty.
       cg_env.write(lower::env_empty());
       cg_real.write(0);
-      reach(main, root_env());
+      reach(main, entry_env);
       compile_all();
       # Only now is the function index space fixed: it counts the imports
       # first, and which ones the program calls is what the pass above

@@ -94,10 +94,10 @@ Proof. reflexivity. Qed.
    not link. Platform.Entry asks the val's type in main's context to be the
    platform's machine type I32, an abstract type symbol, which `()` is not. *)
 Example a_unit_platform_constant_is_rejected : forall W P C v w,
-  nlook v (c_vals C) = Some TUnit -> ~ Platform.Entry W P C (IVal v) (ValueProvision w).
+  nlook v (c_vals (Platform.entry_view W C)) = Some TUnit -> ~ Platform.Entry W P C (IVal v) (ValueProvision w).
 Proof.
   intros W P C v w Ty E. destruct w as [| | |[sort bits|]]; cbn in E; try contradiction. destruct sort; cbn in E; try contradiction.
-  destruct E as (t & Ty' & symbol & _ & _ & ->). rewrite Ty in Ty'. discriminate.
+  destruct E as (t & Ty' & symbol & _ & _ & ->). change (nlook v (c_vals (Platform.entry_view W C)) = Some (TAbs symbol)) in Ty'. rewrite Ty in Ty'. discriminate.
 Qed.
 
 (* The previous return bug is rejected by the real elaborator too. *)

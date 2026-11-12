@@ -1,5 +1,5 @@
 (* EaPlatform.v builds main's initial environment, the platform families'
-   code, and the machine and cast tables. It also checks the platform's
+   code, and the entry type arguments. It also checks the platform's
    linking clauses and supplies the language-item checks for main. *)
 
 From Stdlib Require Import List String Bool Arith ZArith.
@@ -231,23 +231,6 @@ Definition platform_code (u : nat) : er functor_code :=
   let! _ := rcheck (methods_distinct keys) (at_sym u ("the platform functor " ++ nu ++ " provides two items with one method")) in
   Ok (FunctorCode (map fst (c_ty inputs)) (map fst (c_ty inputs)) [] [] binds (map (rkof outputs) keys)).
 
-(* SOUND: with the program's machine table and a formed context, this
-   checks Platform.FixedMachinesRead P C u. *)
-Definition fixed_machines_read (C : cx) (u : nat) : bool :=
-  match cfun C u with
-  | None => true
-  | Some fx =>
-      forallb (fun sym =>
-        match lookup_subst sym fx with
-        | Some t =>
-            let c := canon C (TAbs sym) in
-            ty_eqb (canon C t) c &&
-            match c with TAbs _ => true | _ => false end &&
-            forallb (Nat.eqb sym) (class_of C c)
-        | None => true
-        end) (map fst (Platform.machine_table W))
-  end.
-
 (* main assumes an item no platform library provides: a construct the
    reference does not model (the old oracle's exit 65) *)
 Definition unsupported_need (k : item) : string :=
@@ -264,7 +247,7 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
       let* d := lift (decl_in v) (unsupported_need (IVal v)) in
       (* Platform.Entry: the val's type in main's context is the machine
          type I32 (AUDIT-CHANGES #94: `val i32_one: ()` does not link) *)
-      let* t := lift (cval C v) (unsupported_need (IVal v)) in
+      let* t := lift (cval (Platform.entry_view W C) v) (unsupported_need (IVal v)) in
       let declared_ok := match d_ast d, w_context W v with
                          | ADVal _ a None, Some (Cv, _) =>
                              match ty_of W fuel (d_mod d) (c_ty Cv) None a with Ok t0 => machine_type "I32" t0 | Err _ => false end
@@ -288,7 +271,7 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
               let declared_ok := match w_context W f with
                                  | Some (Cf, _) => at_key Cf (IFn f) pr && handles_read Cf (IFn f)
                                  | None => false end in
-              let* _ := check (at_key C (IFn f) pr && handles_read C (IFn f))
+              let* _ := check (at_key (Platform.entry_view W C) (IFn f) pr && handles_read (Platform.entry_view W C) (IFn f))
                          (at_sym f (if declared_ok then "platform primitive has an incompatible assumed signature"
                                     else "platform primitive has an incompatible declared signature")) in
               ret (PrimitiveClosure (encode pr) None)
@@ -301,7 +284,6 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
       let* d := lift (decl_in u) (unsupported_need (IFun u)) in
       match d_ast d with
       | ADFunctor _ _ _ _ None =>
-          let* _ := check (fixed_machines_read C u) (at_sym u "platform functor has an incompatible assumed fixed type") in
           let* code := pure (platform_code u) in
           let* h := emit_fun_code code in
           ret (FunctorClosure (slot_index h) None empty_environment None)
@@ -311,10 +293,13 @@ Definition platform_entry (C : cx) (k : item) : M provision_value :=
   end.
 
 (* SOUND: main_environment main = Ok env -> the ElaboratesIn clause on
-   program_environment (CtxOf, AuditBase.initial_types, PlatformEntry for each need) *)
+   program_environment (CtxOf, Platform.InitialTypes, PlatformEntry for each need) *)
 Definition main_environment (main : nat) : M environment :=
   let* (C, ns) := lift (w_context W main) "the context of `main` does not form" in
-  let types := map (fun q => (fst q, app_subst (AuditBase.machine_subst (Platform.machine_table W)) (snd q))) (c_ty C) in
+  let caller := Platform.entry_context W in
+  let* _ := pure (rule_b W "calling `main` from Base" caller C) in
+  let* _ := pure (call_theta W "calling `main` from Base" caller C) in
+  let types := Platform.entry_types W C in
   let* platform := mmap (fun k => let* v := platform_entry C (rkof C k) in ret (rkof C k, v)) ns in
   ret (Environment types platform).
 

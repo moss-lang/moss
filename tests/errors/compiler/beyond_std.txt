@@ -1,1 +1,1 @@
-?Q tests/errors/beyond_std.moss main example
+!P tests/errors/beyond_std.moss example

@@ -17,21 +17,6 @@ Import Audit.Input AuditBase.Semantics AuditBase.Semantics.Elaboration.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 
-Definition bound_in (C : cx) (r : nat) : bool := is_some (nlook r (c_ty C)).
-Definition read_here (C : cx) (r : nat) : ty := canon C (app_subst (c_ty C) (TAbs r)).
-
-(* the members of the merge class (in Cs) whose canonical reading is t *)
-Definition class_of (Cs : cx) (t : ty) : list nat :=
-  (match t with TAbs z => if is_some (lookup_subst z (c_sub Cs)) then [] else [z] | _ => [] end) ++
-  flat_map (fun q => if ty_eqb (snd q) t then [fst q] else []) (c_sub Cs).
-
-(* a class representative z's value here: through its first member C binds *)
-Definition class_value (C Cs : cx) (z : nat) : ty :=
-  match find (bound_in C) (class_of Cs (TAbs z)) with
-  | Some y => read_here C y
-  | None => canon C (TAbs z)
-  end.
-
 (* SOUND: call_theta C Cs s = Ok th -> CallTheta W C Cs s th
    (θ's merge clause is checked; the other two hold by construction).
    Rule B puts the requirements of an ordinary call in force. Assumption
@@ -42,15 +27,8 @@ Definition min_first {A} (l : list (nat * A)) : option (nat * A) :=
 Definition merges_msg (W : world) (who : string) (g : nat) (b a' b' : ty) : string :=
   who ++ " needs " ++ bq (sym_name W g) ++ " and " ++ qty W b ++
   " to be one type, which its context merged (D43), but here they are " ++ qty W a' ++ " and " ++ qty W b'.
-Definition call_read (C Cs : cx) (read_class : nat -> ty) (r : nat) : ty :=
-  if bound_in C r then read_here C r else
-  match canon Cs (TAbs r) with
-  | TAbs z => read_class z
-  | t => canon C (app_subst (map (fun z => (z, read_class z)) (gens t)) t)
-  end.
-
 Definition call_theta_with (W : world) (who : string) (C Cs : cx) (read_class : nat -> ty) : er subst :=
-  let th := map (fun q => (fst q, call_read C Cs read_class (fst q))) (c_ty Cs) in
+  let th := call_type_arguments C Cs read_class in
   match min_first (filter (fun q => negb (ty_eqb (canon C (app_subst th (TAbs (fst q)))) (canon C (app_subst th (snd q)))))
              (c_sub Cs)) with
   | Some (g, b) => Err (merges_msg W who g b (canon C (app_subst th (TAbs g))) (canon C (app_subst th b)))

@@ -391,6 +391,7 @@ fn platform_bindings_check_the_merged_entry_view() {
         "tag U; context Bad=Wasm,w::i32_one[w::I32=U]; assume Bad {fn main(){match w::i32_one{U=>()};}}",
         "tag U; context Bad=Wasm,w::i32_add[w::I32=U]; assume Bad {fn main(){w::i32_add(U,U);}}",
         "import \"./wasip1.moss\" as p use WasiCore; tag U; context Bad=w::Memory,WasiCore,p::fd_write[w::I32=U,w::Memory=w::Memory]; assume Bad {fn main(){p::fd_write(U,U,U,U);}}",
+        "type X; context Bad=X,Wasm,w::i32_add[w::I32=X],w::i32_add[w::I32=w::F64]; assume Bad {fn main(){}}",
     ] {
         let dir = sources(&[]);
         let lib = format!("{dir}/lib");
@@ -407,7 +408,21 @@ fn platform_bindings_check_the_merged_entry_view() {
         assert!(!compile(&entry, &prelude).is_module());
         let checked = oracle_command(&["--prelude", &prelude, "--elab-only", &entry]);
         assert_eq!(checked.code, ORACLE_REJECTED, "{}", checked.stderr);
-        assert!(checked.stderr.contains("incompatible"), "{}", checked.stderr);
+        assert!(checked.stderr.contains("its context merged"), "{}", checked.stderr);
+    }
+}
+
+#[test]
+fn entry_requires_every_assumed_type_and_operation() {
+    for (program, code, message) in [
+        ("type T; assume T {fn main() {}}", ORACLE_REJECTED, "needs `T` in force"),
+        ("fn f(); assume f {fn main() {}}", ORACLE_UNSUPPORTED, "main assumes `f`"),
+    ] {
+        let entry = source(program);
+        assert!(!compile(&entry, "").is_module());
+        let reference = oracle_command(&["--prelude", "", "--elab-only", &entry]);
+        assert_eq!(reference.code, code, "{}", reference.stderr);
+        assert!(reference.stderr.contains(message), "{}", reference.stderr);
     }
 }
 
