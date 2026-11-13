@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
 
-from wasm import COMPILER, PRELUDE, binaryen_flags, maximize_stack, validator_flags
+from wasm import COMPILER, PRELUDE, binaryen_flags, validator_flags, with_maximum_stack
 
 REFERENCE = "moss-ref"
 ORACLE_FRONT_END = 63
@@ -259,14 +259,13 @@ def oracle_path():
 
 @once
 def oracle_env():
-    maximize_stack()
     environment = os.environ.copy()
     environment.pop("MOSS_LIB", None)
     return environment
 
 
 def oracle_command(args):
-    return output([oracle_path(), *args], cwd=repo(), env=oracle_env())
+    return output(with_maximum_stack([oracle_path(), *args]), cwd=repo(), env=oracle_env())
 
 
 def oracle(entry, args):

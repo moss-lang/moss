@@ -11,11 +11,11 @@ from pathlib import Path
 
 from wasm import (
     COMPILER,
-    maximize_stack,
     optimize,
     oracle_compile_args,
     run,
     self_compile,
+    with_maximum_stack,
 )
 
 
@@ -35,13 +35,12 @@ def phases(operation):
 
 
 def bootstrap(source, oracle, output, details):
-    maximize_stack()
     details.mkdir()
     first = details / "s1.wasm"
     second = details / "s2.wasm"
     with phases("bootstrap") as phase:
         phase("interpreting the compiler to produce S1")
-        run(*oracle_compile_args(oracle), cwd=source, output=first)
+        run(*with_maximum_stack(oracle_compile_args(oracle)), cwd=source, output=first)
         phase("validating and optimizing S1")
         optimize(first, output)
         phase("running S1 to produce S2")

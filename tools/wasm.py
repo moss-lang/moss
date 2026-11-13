@@ -1,6 +1,5 @@
 """WebAssembly tool commands and the features Moss targets."""
 
-import resource
 import subprocess
 from functools import cache
 from pathlib import Path
@@ -69,6 +68,7 @@ def oracle_compile_args(oracle, options=()):
     return [oracle, "--time", *options, "--pages", "2", "--argv0", PRELUDE, COMPILER, COMPILER]
 
 
-def maximize_stack():
-    _, limit = resource.getrlimit(resource.RLIMIT_STACK)
-    resource.setrlimit(resource.RLIMIT_STACK, (limit, limit))
+def with_maximum_stack(command):
+    # macOS rejects stack-limit changes from Python's custom-stack executable.
+    # Set the soft limit in Bash so the interpreter inherits it at exec.
+    return ["bash", "-c", 'ulimit -S -s "$(ulimit -H -s)" && exec -- "$@"', "moss-stack", *command]

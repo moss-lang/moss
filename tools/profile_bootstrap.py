@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from wasm import ROOT, maximize_stack, oracle_compile_args
+from wasm import ROOT, oracle_compile_args, with_maximum_stack
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
         ).stdout.strip()
         or "?"
     )
-    command = oracle_compile_args(driver, extra)
+    command = with_maximum_stack(oracle_compile_args(driver, extra))
 
     with (out / "info.txt").open("w", encoding="utf-8") as info:
 
@@ -46,7 +46,6 @@ def main():
             f"self-compile: {driver} {' '.join(extra)} (commit {revision}), "
             f"started {datetime.now().astimezone().isoformat(timespec='seconds')}"
         )
-        maximize_stack()
         start = time.monotonic()
         with (out / "s1.wasm").open("wb") as wasm, (out / "err.txt").open("wb") as errors:
             status = subprocess.call(command, cwd=ROOT, stdout=wasm, stderr=errors)
