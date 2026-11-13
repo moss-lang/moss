@@ -1,0 +1,461 @@
+#!/usr/bin/env moss
+# Generate the Moss logo as SVG on stdout.
+# moss run tools/logo.moss SEED HEIGHT ANGULARITY COVERAGE EDGE ROCK MOSS [SHAPE]
+# SEED is an unsigned 32-bit decimal. The four sliders take 0–100.
+# Quote the #rrggbb colors. SHAPE defaults to both (Rounded wrap).
+# With no arguments, use the starting variation from the editor.
+import "array.moss" use Item, Array, .arrayed;
+import "wasm.moss" as wasm;
+import "wasip1.moss" use proc_exit;
+
+assume Std {
+  tag Point { x: Float, y: Float };
+  tag Vector { x: Float, y: Float, z: Float };
+  tag Settings {
+    seed: Int, height: Int, angularity: Int, coverage: Int, edge: Int,
+    rock_color: Int, moss_color: Int, shape: Int
+  };
+  tag Palette { rock: Int, facet: Int, shadow: Int, moss: Int, underside: Int, highlight: Int };
+  tag Projection { facets: Float, height: Float, rotation: Float, phase3: Float, phase5: Float };
+  tag Growth {
+    projection: Projection, center: Vector, tangent: Vector, inward: Vector,
+    radius: Float, roughness: Float, notch: Float, back: Float, phase5: Float, phase9: Float
+  };
+  tag Paths {
+    rock: Array[Item=Point], facet: Array[Item=Point],
+    moss: Array[Item=Point], face: Array[Item=Point],
+    shadow: Array[Item=Point], highlight: Array[Item=Point]
+  };
+
+  fn pi(): Float { 3.141592653589793 }
+  fn turn(): Float { 2.0 * pi() }
+
+  fn positive(x: Float): Float {
+    if x > 0.0 { x } else { 0.0 }
+  }
+
+  fn minimum(a: Float, b: Float): Float {
+    if a < b { a } else { b }
+  }
+
+  # The standard library supplies square root. Reduce angles before using
+  # Taylor series for the trigonometric operations needed by the projection.
+  fn sine(angle: Float): Float {
+    let reduced = angle - turn() * float((angle / turn()).round());
+    var x = reduced;
+    if x > pi() / 2.0 { x = pi() - x; }
+    if x < -pi() / 2.0 { x = -pi() - x; }
+    let square = -x * x;
+    var term = x;
+    var sum = x;
+    var n = 2;
+    while n <= 20 {
+      term = term * square / float(n * (n + 1));
+      sum = sum + term;
+      n = n + 2;
+    }
+    sum
+  }
+
+  fn cosine(angle: Float): Float { sine(angle + pi() / 2.0) }
+
+  fn atan_unit(x: Float): Float {
+    var z = x;
+    var offset = 0.0;
+    if x > 0.414213562373095 {
+      z = (x - 1.0) / (x + 1.0);
+      offset = pi() / 4.0;
+    }
+    let square = -z * z;
+    var power = z;
+    var sum = z;
+    var n = 3;
+    while n <= 39 {
+      power = power * square;
+      sum = sum + power / float(n);
+      n = n + 2;
+    }
+    sum + offset
+  }
+
+  fn atan2(y: Float, x: Float): Float {
+    let ax = x.abs();
+    let ay = y.abs();
+    if ax == 0.0 {
+      if ay == 0.0 { return 0.0; }
+      return if y < 0.0 { -pi() / 2.0 } else { pi() / 2.0 };
+    }
+    var angle = if ax >= ay { atan_unit(ay / ax) } else { pi() / 2.0 - atan_unit(ax / ay) };
+    if x < 0.0 { angle = pi() - angle; }
+    if y < 0.0 { -angle } else { angle }
+  }
+
+  fn float_remainder(x: Float, divisor: Float): Float {
+    x - divisor * float((x / divisor).trunc())
+  }
+
+  # Int arithmetic wraps at 32 bits in StdBase. Mask off sign extension
+  # to reproduce the editor's unsigned shifts in Mulberry32.
+  fn random_unit(seed: Int): Float {
+    let mut1 = (seed ^ ((seed >> 15) & 131071)) * (seed | 1);
+    let mut2 = mut1 ^ (mut1 + (mut1 ^ ((mut1 >> 7) & 33554431)) * (mut1 | 61));
+    let bits = mut2 ^ ((mut2 >> 14) & 262143);
+    let unsigned = float(bits & 2147483647) + (if bits < 0 { 2147483648.0 } else { 0.0 });
+    unsigned / 4294967296.0
+  }
+
+  fn unit(v: Vector): Vector {
+    let length = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+    Vector { x = v.x / length, y = v.y / length, z = v.z / length }
+  }
+
+  fn tangent_to(v: Vector): Vector {
+    unit(Vector { x = -v.y, y = v.x, z = 0.0 })
+  }
+
+  fn cross(v: Vector, w: Vector): Vector {
+    Vector { x = v.y * w.z - v.z * w.y, y = v.z * w.x - v.x * w.z, z = v.x * w.y - v.y * w.x }
+  }
+
+  fn on_surface(center: Vector, tangent: Vector, inward: Vector, angle: Float, distance: Float): Vector {
+    let along = cosine(distance);
+    let across = sine(distance);
+    let c = cosine(angle);
+    let s = sine(angle);
+    Vector {
+      x = center.x * along + across * (tangent.x * c + inward.x * s),
+      y = center.y * along + across * (tangent.y * c + inward.y * s),
+      z = center.z * along + across * (tangent.z * c + inward.z * s)
+    }
+  }
+
+  fn project(p: Projection, x: Float, y: Float, thickness: Float): Point {
+    let angle = atan2(y, x);
+    let sector = turn() / 9.0;
+    let corner = float_remainder(float_remainder(angle - p.rotation, sector) + sector, sector);
+    let facet = cosine(sector / 2.0) / cosine(corner - sector / 2.0);
+    let wobble = 0.046 * sine(3.0 * angle + p.phase3) + 0.026 * sine(5.0 * angle + p.phase5);
+    let scale = 1.0 + wobble + 0.78 * p.facets * (facet - 1.0);
+    Point {
+      x = 63.0 + x * (48.0 * scale + thickness),
+      y = 66.0 + y * (45.0 * scale + thickness) * p.height
+    }
+  }
+
+  fn growth_radius(g: Growth, angle: Float): Float {
+    let front = positive(sine(angle));
+    let front2 = front * front;
+    let crown = positive(-cosine(angle));
+    g.radius + g.back * crown - g.notch * (front2 * front2 * front2)
+      + (0.018 + 0.047 * g.roughness) * cosine(5.0 * angle + g.phase5)
+      + 0.044 * g.roughness * cosine(9.0 * angle + g.phase9)
+  }
+
+  fn growth_point(g: Growth, angle: Float, radius: Float, thickness: Float): Point {
+    var point = on_surface(g.center, g.tangent, g.inward, angle, radius);
+    if point.z < 0.0 {
+      # Stop at the visible limb if the patch extends to the back.
+      var near = 0.0;
+      var far = radius;
+      var step = 0;
+      while step < 11 {
+        let middle = (near + far) / 2.0;
+        if on_surface(g.center, g.tangent, g.inward, angle, middle).z > 0.0 {
+          near = middle;
+        } else {
+          far = middle;
+        }
+        step = step + 1;
+      }
+      point = on_surface(g.center, g.tangent, g.inward, angle, near);
+    }
+    project(g.projection, point.x, point.y, thickness)
+  }
+
+  fn outline_points(config: Settings): Paths {
+    # Advance the same 32-bit stream as the editor: seven phases, then
+    # two offsets for the center of the patch.
+    let phases = 0.0.arrayed(7.size());
+    var seed = config.seed;
+    var i = 0;
+    while i < 7 {
+      seed = seed + 1831565813;
+      phases.set(i.size(), random_unit(seed) * turn());
+      i = i + 1;
+    }
+    let shift_x = (2.0 * random_unit(seed + 1831565813) - 1.0) * 0.055;
+    let shift_y = (2.0 * random_unit((seed + 1831565813) + 1831565813) - 1.0) * 0.055;
+    let projection = Projection {
+      facets = float(config.angularity) / 100.0, height = 0.69 + 0.31 * float(config.height) / 100.0,
+      rotation = phases.get(0.size()), phase3 = phases.get(1.size()), phase5 = phases.get(2.size())
+    };
+    let notch = if config.shape == 0 { 0.0 } else if config.shape == 1 { 0.34 } else { 0.18 };
+    let back = if config.shape == 0 { 0.02 } else if config.shape == 1 { 0.19 } else { 0.12 };
+    let center = unit(Vector { x = 0.46 + shift_x - 0.30 * back, y = -0.65 + shift_y, z = 0.67 });
+    let tangent = tangent_to(center);
+    let inward = cross(center, tangent);
+    let growth = Growth {
+      projection, center, tangent, inward, notch, back,
+      radius = 0.60 + 0.30 * (float(config.coverage) / 100.0),
+      roughness = float(config.edge) / 100.0, phase5 = phases.get(3.size()), phase9 = phases.get(4.size())
+    };
+
+    let zero_point = Point { x = 0.0, y = 0.0 };
+    let rock = zero_point.arrayed(36.size());
+    let facet = zero_point.arrayed(10.size());
+    let moss = zero_point.arrayed(48.size());
+    let face = zero_point.arrayed(48.size());
+    let shadow = zero_point.arrayed(48.size());
+    let highlight = zero_point.arrayed(16.size());
+    i = 0;
+    while i < 36 {
+      let angle = projection.rotation + float(i) * turn() / 36.0;
+      rock.set(i.size(), project(projection, cosine(angle), sine(angle), 0.0));
+      i = i + 1;
+    }
+    facet.set(0.size(), project(projection, -1.22, 0.30, 0.0));
+    facet.set(1.size(), project(projection, -0.66, 0.43, 0.0));
+    facet.set(2.size(), project(projection, -0.32, 0.49, 0.0));
+    facet.set(3.size(), project(projection, -0.09, 0.35, 0.0));
+    facet.set(4.size(), project(projection, 0.18, 0.33, 0.0));
+    facet.set(5.size(), project(projection, 0.43, 0.10, 0.0));
+    facet.set(6.size(), project(projection, 0.66, 0.01, 0.0));
+    facet.set(7.size(), project(projection, 1.22, -0.31, 0.0));
+    facet.set(8.size(), project(projection, 1.40, 1.35, 0.0));
+    facet.set(9.size(), project(projection, -1.40, 1.35, 0.0));
+    i = 0;
+    while i < 48 {
+      let angle = float(i) * turn() / 48.0;
+      let radius = growth_radius(growth, angle);
+      let front = positive(cosine(angle - 1.0));
+      let inset = minimum(0.028 + 0.17 * front, 0.46 * radius);
+      moss.set(i.size(), growth_point(growth, angle, radius, 3.7));
+      face.set(i.size(), growth_point(growth, angle, radius - inset, 3.7));
+      shadow.set(i.size(), growth_point(growth, angle, radius + 0.085 * front, 1.4));
+      i = i + 1;
+    }
+    let lit = on_surface(center, tangent, inward, 3.68, 0.24);
+    let lit_tangent = tangent_to(lit);
+    let lit_inward = cross(lit, lit_tangent);
+    i = 0;
+    while i < 16 {
+      let angle = float(i) * turn() / 16.0;
+      let radius = 0.24 + 0.04 * cosine(2.0 * angle + phases.get(5.size()))
+        + 0.023 * cosine(5.0 * angle + phases.get(6.size()));
+      let point = on_surface(lit, lit_tangent, lit_inward, angle, radius);
+      highlight.set(i.size(), project(projection, point.x, point.y, 3.7));
+      i = i + 1;
+    }
+    Paths { rock, facet, moss, face, shadow, highlight }
+  }
+
+  fn put_digit(n: Int) { putchar((char::digit0.code() + n).char()); }
+
+  fn put_decimal(n: Int) {
+    if n >= 10 { put_decimal(n / 10); }
+    put_digit(n % 10);
+  }
+
+  fn put_coordinate(value: Float) {
+    var n = (value.abs() * 100.0).round();
+    if (value < 0.0).and(n != 0) { print("-"); }
+    put_decimal(n / 100);
+    n = n % 100;
+    if n != 0 {
+      print(".");
+      put_digit(n / 10);
+      if n % 10 != 0 { put_digit(n % 10); }
+    }
+  }
+
+  fn put_point(point: Point) {
+    put_coordinate(point.x);
+    print(" ");
+    put_coordinate(point.y);
+  }
+
+  fn put_path(points: Array[Item=Point], smooth: Bool) {
+    print("M ");
+    put_point(points.get(0.size()));
+    let count = points.length().int();
+    if smooth {
+      var i = 0;
+      while i < count {
+        let from = points.get(i.size());
+        let to = points.get(((i + 1) % count).size());
+        let previous = points.get(((i + count - 1) % count).size());
+        let next = points.get(((i + 2) % count).size());
+        print(" C ");
+        put_point(Point { x = from.x + 0.16 * (to.x - previous.x), y = from.y + 0.16 * (to.y - previous.y) });
+        print(" ");
+        put_point(Point { x = to.x - 0.16 * (next.x - from.x), y = to.y - 0.16 * (next.y - from.y) });
+        print(" ");
+        put_point(to);
+        i = i + 1;
+      }
+    } else {
+      var i = 1;
+      while i < count {
+        print(" L ");
+        put_point(points.get(i.size()));
+        i = i + 1;
+      }
+    }
+    print(" Z");
+  }
+
+  fn put_hex_digit(n: Int) {
+    if n < 10 { put_digit(n); } else { putchar((char::a.code() + n - 10).char()); }
+  }
+
+  fn put_color(color: Int) {
+    print("#");
+    var bit = 20;
+    while bit >= 0 {
+      put_hex_digit((color >> bit) & 15);
+      bit = bit - 4;
+    }
+  }
+
+  fn mix_color(base: Int, tint: Int, percent: Int): Int {
+    var color = 0;
+    var bit = 16;
+    while bit >= 0 {
+      let a = (base >> bit) & 255;
+      let b = (tint >> bit) & 255;
+      let channel = (a * (100 - percent) + b * percent + 50) / 100;
+      color = color | (channel << bit);
+      bit = bit - 8;
+    }
+    color
+  }
+
+  fn clip(id: String, points: Array[Item=Point]) {
+    print("    <clipPath id=\""); print(id); print("\"><path d=\"");
+    put_path(points, true);
+    println("\"/></clipPath>");
+  }
+
+  fn layer(id: String, color: Int, mask: String, points: Array[Item=Point], smooth: Bool) {
+    print("  <path id=\""); print(id); print("\" fill=\""); put_color(color);
+    if mask.length() != 0 {
+      print("\" clip-path=\"url(#"); print(mask); print(")");
+    }
+    print("\" d=\""); put_path(points, smooth); println("\"/>");
+  }
+
+  fn generate_logo(config: Settings) {
+    let paths = outline_points(config);
+    # Tint colors are packed RGB integers in decimal.
+    let colors = Palette {
+      rock = config.rock_color, moss = config.moss_color,
+      facet = mix_color(config.rock_color, 2370352, 24),       # 242b30
+      shadow = mix_color(config.rock_color, 2238243, 27),      # 222723
+      underside = mix_color(config.moss_color, 2703403, 34),  # 29402b
+      highlight = mix_color(config.moss_color, 15265210, 23)  # e8edba
+    };
+    println("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 128 128\">");
+    println("  <title>Moss</title>");
+    println("  <defs>");
+    clip("rock-clip", paths.rock);
+    clip("moss-clip", paths.moss);
+    println("  </defs>");
+    layer("rock", colors.rock, "", paths.rock, true);
+    layer("rock-facet", colors.facet, "rock-clip", paths.facet, false);
+    layer("cast-shadow", colors.shadow, "rock-clip", paths.shadow, true);
+    layer("moss-underside", colors.underside, "", paths.moss, true);
+    layer("moss-face", colors.moss, "moss-clip", paths.face, true);
+    layer("moss-highlight", colors.highlight, "moss-clip", paths.highlight, true);
+    println("</svg>");
+  }
+
+  # Ten decimal digits fit exactly in Float. This lets us validate an
+  # unsigned seed before mapping it to the standard signed 32-bit Int.
+  fn decimal(text: String): Float {
+    if (text.length() == 0).or(text.length() > 10) { return -1.0; }
+    var n = 0.0;
+    var i = 0;
+    while i < text.length() {
+      let digit = text.get(i).code() - char::digit0.code();
+      if (digit < 0).or(digit > 9) { return -1.0; }
+      n = n * 10.0 + float(digit);
+      i = i + 1;
+    }
+    n
+  }
+
+  fn slider(index: Int): Int {
+    let n = decimal(arg_at(index));
+    if n > 100.0 { -1 } else { n.trunc() }
+  }
+
+  fn parse_color(text: String): Int {
+    if text.length() != 7 { return -1; }
+    if text.get(0).code() != 35 { return -1; }
+    var i = 1;
+    var value = 0;
+    while i < 7 {
+      let code = text.get(i).code();
+      let digit = if (code >= 48).and(code <= 57) { code - 48 }
+        else if (code >= 65).and(code <= 70) { code - 55 }
+        else if (code >= 97).and(code <= 102) { code - 87 }
+        else { -1 };
+      if digit < 0 { return -1; }
+      value = value * 16 + digit;
+      i = i + 1;
+    }
+    value
+  }
+
+  fn same_text(a: String, b: String): Bool {
+    if a.length() != b.length() { return false; }
+    var i = 0;
+    while i < a.length() {
+      if a.get(i).code() != b.get(i).code() { return false; }
+      i = i + 1;
+    }
+    true
+  }
+
+  fn parse_shape(text: String): Int {
+    if same_text(text, "convex") { 0 }
+    else if same_text(text, "wrap") { 1 }
+    else if same_text(text, "both") { 2 }
+    else { -1 }
+  }
+
+  fn logo_command(): Bool {
+    if arg_count() == 1 {
+      generate_logo(Settings {
+        seed = 693411046, height = 100, angularity = 100, coverage = 75, edge = 50,
+        rock_color = parse_color("#626a67"), moss_color = parse_color("#589310"), shape = 2
+      });
+      return true;
+    }
+    if (arg_count() != 8).and(arg_count() != 9) { return false; }
+    let seed = decimal(arg_at(1));
+    if (seed < 0.0).or(seed > 4294967295.0) { return false; }
+    let height = slider(2);
+    let angularity = slider(3);
+    let coverage = slider(4);
+    let edge = slider(5);
+    let rock_color = parse_color(arg_at(6));
+    let moss_color = parse_color(arg_at(7));
+    let shape = if arg_count() == 9 { parse_shape(arg_at(8)) } else { 2 };
+    if (height < 0).or(angularity < 0).or(coverage < 0).or(edge < 0)
+      .or(rock_color < 0).or(moss_color < 0).or(shape < 0) { return false; }
+    let signed_seed = if seed >= 2147483648.0 { seed - 4294967296.0 } else { seed };
+    generate_logo(Settings { seed = signed_seed.trunc(), height, angularity, coverage, edge, rock_color, moss_color, shape });
+    true
+  }
+}
+
+assume ReferenceBase {
+  fn main() {
+    bind StdBase;
+    if !logo_command() {
+      println("Usage: moss run tools/logo.moss SEED HEIGHT ANGULARITY COVERAGE EDGE '#ROCK' '#MOSS' [convex|wrap|both]");
+      proc_exit(wasm::i32_add(wasm::i32_one, wasm::i32_one));
+    }
+  }
+}

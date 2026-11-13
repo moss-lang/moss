@@ -429,6 +429,15 @@
                 python3 tools/test.py
                 touch "$out"
               '';
+          logo =
+            let
+              mossRef = pkgs.lib.getExe self.packages.${pkgs.stdenv.hostPlatform.system}.${referenceName};
+            in
+            pkgs.runCommand "moss-logo-check" { } ''
+              ${mossRef} --prelude ${./lib}/prelude.moss ${./tools/logo.moss} > logo.svg
+              diff -u ${./logo.svg} logo.svg
+              touch "$out"
+            '';
           vscode = self.packages.${pkgs.stdenv.hostPlatform.system}.vscode;
         }
         // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
