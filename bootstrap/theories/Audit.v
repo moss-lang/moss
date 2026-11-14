@@ -204,6 +204,22 @@ Inductive ty : Type :=
 | TNom   : nsym -> list (tsym * ty) -> ty   (* total applied nominal reference *)
 | TUnion : list ty -> ty.                   (* members must be nominal refs *)
 
+(* Canonical layout order is independent of syntax order and payload types. *)
+Fixpoint insert_ordered {A} (before : A -> A -> bool) (x : A) (xs : list A) : list A :=
+  match xs with
+  | [] => [x]
+  | y :: rest => if before x y then x :: xs else y :: insert_ordered before x rest
+  end.
+
+Definition order_fields {A} (fields : list (string * A)) : list (string * A) :=
+  fold_right (insert_ordered (fun x y => String.leb (fst x) (fst y))) [] fields.
+
+Definition union_key (t : ty) : nat :=
+  match t with TNom tag _ => tag | _ => 0 end.
+
+Definition order_members (members : list ty) : list ty :=
+  fold_right (insert_ordered (fun x y => Nat.leb (union_key x) (union_key y))) [] members.
+
 Definition subst := list (tsym * ty).
 
 Fixpoint lookup_subst (t : tsym) (s : subst) : option ty :=
@@ -941,7 +957,7 @@ Fixpoint eval (fuel : nat) (P : program_view) (d : environment) (g : locals) (st
       | EBreak => Evaluation Breaking g st
       | ERecord fs =>
           match eval_arguments k P d g st (map snd fs) with
-          | inl (ws, g1, st1) => Evaluation (Normal (VRecord (combine (map fst fs) ws))) g1 st1
+          | inl (ws, g1, st1) => Evaluation (Normal (VRecord (order_fields (combine (map fst fs) ws)))) g1 st1
           | inr r => r
           end
       | EField e1 f =>
@@ -1531,13 +1547,13 @@ Inductive TyOf (W : world) : string -> list (nat * ty) -> option ty -> aty -> ty
 | TyRec   : forall p tm th fs ts,
     NoDup (map fst fs) ->
     Forall2 (fun nt ft => fst ft = fst nt /\ TyOf W p tm th (snd nt) (snd ft)) fs ts ->
-    TyOf W p tm th (ATRec fs) (TRecord ts)
+    TyOf W p tm th (ATRec fs) (TRecord (order_fields ts))
 | TyUnion : forall p tm th ms ts flat,
     Forall2 (TyOf W p tm th) ms ts ->
     flat = flat_map members ts ->
     (* Union members have nominal identities, with one payload type per head. *)
     Forall (fun m => exists n xs, m = TNom n xs) flat -> NoDup (map head flat) ->
-    TyOf W p tm th (ATUnion ms) (TUnion flat)
+    TyOf W p tm th (ATUnion ms) (TUnion (order_members flat))
 | TyType  : forall p tm th pa t tau,
     resolve_sym W p pa = Some t -> kind_sym W t = Some DKType -> nlook t tm = Some tau ->
     TyOf W p tm th (ATRef pa None) tau
@@ -3719,14 +3735,11 @@ Definition record_field_expected (expected : option ty) (field : ty) : option ty
 Definition record_field_fits (expected : option ty) (actual field : ty) : Prop :=
   match expected with Some _ => fits actual field | None => actual = field end.
 
-(* In synthesis, a record's fields are ordered as written. Checking uses
-   the expected record's field order, just as a tagged record does. *)
+(* Field plans follow the expression's written order. *)
 Definition record_literal_shape (given : list (fld * option aexpr)) (expected : option ty)
     (fields : list (fld * ty)) : Prop :=
-  match expected with
-  | None => map fst given = map fst fields
-  | Some t => t = TRecord fields /\ NoDup (map fst fields)
-  end.
+  map fst given = map fst fields /\
+  match expected with None => True | Some t => t = TRecord (order_fields fields) end.
 
 Module Export Typing.
 
@@ -4303,15 +4316,16 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
     Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
-    PayloadOf W tag arguments (TRecord fields) ->
+    PayloadOf W tag arguments (TRecord (order_fields fields)) ->
     NoDup (map fst given) -> List.length given = List.length fields ->
-    TypesRecordFields W F C given (Some (TRecord fields)) fields plans ->
+    map fst given = map fst fields ->
+    TypesRecordFields W F C given (Some (TRecord (order_fields fields))) fields plans ->
     TypesExpr W F C (AERec path brackets given) exp (PlanRecord tag arguments plans) (TNom tag arguments)
 | TypesBareRecord : forall F C exp given fields plans,
     NoDup (map fst given) -> List.length given = List.length fields ->
     record_literal_shape given exp fields ->
     TypesRecordFields W F C given exp fields plans ->
-    TypesExpr W F C (AEBareRecord given) exp (PlanBareRecord plans) (TRecord fields)
+    TypesExpr W F C (AEBareRecord given) exp (PlanBareRecord plans) (TRecord (order_fields fields))
 | TypesField : forall F C exp object field plan actual payload t bare,
     TypesExpr W F C object None plan actual ->
     ((bare = false /\ exists tag arguments, actual = TNom tag arguments /\ kind_sym W tag = Some DKTag /\

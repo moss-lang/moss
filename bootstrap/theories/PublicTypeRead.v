@@ -1,11 +1,59 @@
 (* Type readings are functional for the public relation: TyOf, Brackets,
    SigOf and PayloadOf each determine their result. Ported from CtxMerge.v,
    which proves the same for ExecutionModel's copy of the relation. *)
-From Stdlib Require Import List String Arith.
+From Stdlib Require Import List String Arith Sorting.Permutation.
 From NM Require AuditBase.
 From NM Require Import Audit.
 Import Audit.Input AuditBase.Semantics ListNotations.
 Module A := AuditBase.Semantics.Elaboration.
+
+Lemma insert_ordered_perm : forall X (before : X -> X -> bool) x xs,
+  Permutation (insert_ordered before x xs) (x :: xs).
+Proof.
+  intros X before x xs. induction xs as [|y ys IH]; cbn; [reflexivity|].
+  destruct (before x y); [reflexivity|].
+  eapply Permutation_trans with (l' := y :: x :: ys); [now constructor|apply perm_swap].
+Qed.
+
+Lemma order_perm : forall X (before : X -> X -> bool) xs,
+  Permutation (fold_right (insert_ordered before) [] xs) xs.
+Proof.
+  intros X before xs. induction xs as [|x xs IH]; cbn; [reflexivity|].
+  eapply Permutation_trans with (l' := x :: fold_right (insert_ordered before) [] xs);
+    [apply insert_ordered_perm|now constructor].
+Qed.
+
+Lemma order_in : forall X (before : X -> X -> bool) (xs : list X) x,
+  In x (fold_right (insert_ordered before) [] xs) -> In x xs.
+Proof. intros; eapply Permutation_in; [apply order_perm|eassumption]. Qed.
+
+Lemma order_map : forall X Y (before : X -> X -> bool) (after : Y -> Y -> bool)
+    (f : X -> Y) xs,
+  (forall x y, In x xs -> In y xs -> after (f x) (f y) = before x y) ->
+  map f (fold_right (insert_ordered before) [] xs) =
+    fold_right (insert_ordered after) [] (map f xs).
+Proof.
+  intros X Y before after f xs. induction xs as [|x xs IH]; intros Orders; cbn; [reflexivity|].
+  rewrite <- IH by (intros; apply Orders; now right).
+  remember (fold_right (insert_ordered before) [] xs) as ys eqn:Sorted.
+  assert (Members : forall y, In y ys -> In y xs) by (intros; subst ys; eapply order_in; eassumption).
+  clear Sorted IH. induction ys as [|y ys IH]; cbn; [reflexivity|].
+  assert (Order : after (f x) (f y) = before x y).
+  { apply Orders; [now left|right; apply Members; now left]. }
+  rewrite Order.
+  destruct (before x y); cbn; [reflexivity|].
+  f_equal. apply IH. intros; apply Members; now right.
+Qed.
+
+Lemma order_fields_map : forall X Y (f : X -> Y) (fields : list (string * X)),
+  map (fun q => (fst q, f (snd q))) (order_fields fields) =
+  order_fields (map (fun q => (fst q, f (snd q))) fields).
+Proof. intros; apply order_map; reflexivity. Qed.
+
+Lemma order_members_map : forall (f : ty -> ty) members,
+  (forall t, In t members -> union_key (f t) = union_key t) ->
+  map f (order_members members) = order_members (map f members).
+Proof. intros; apply order_map; intros; now rewrite !H. Qed.
 
 Section Det.
 Variable W : A.world.
@@ -33,7 +81,7 @@ Proof.
     + reflexivity.
     + reflexivity.
     + reflexivity.
-    + f_equal. match goal with H0 : Forall2 _ fs ?ts0 |- _ => assert_fails (constr_eq H0 F); revert ts0 H0 end. repeat match goal with H : NoDup _ |- _ => clear H end.
+    + f_equal. apply f_equal. match goal with H0 : Forall2 _ fs ?ts0 |- _ => assert_fails (constr_eq H0 F); revert ts0 H0 end. repeat match goal with H : NoDup _ |- _ => clear H end.
       induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; intros ts0 F0; inversion F0; subst; [reflexivity|].
       match goal with H0 : fst ?y = _ /\ _ |- _ => destruct H0 as [E2 Hy] end.
       f_equal; [apply pair_eta; [congruence | exact (tyof_det _ _ _ _ _ Hft _ Hy)] | apply IH; assumption].
@@ -172,11 +220,13 @@ Proof.
     + apply TyNever.
     + apply TyUnit.
     + apply TyThis.
-    + rewrite subst_record. apply TyRec.
+    + rewrite subst_record, order_fields_map. apply TyRec.
       * exact Nd.
       * clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [constructor|]. constructor; [|exact IH].
         split; [exact E1 | exact (tyof_subst _ _ _ _ _ Hft tm' Hs)].
-    + subst flat. rewrite subst_union, <- (flat_sub ts Fm). apply TyUnion with (ts := map (app_subst s) ts).
+    + subst flat. rewrite subst_union, order_members_map, <- (flat_sub ts Fm).
+      2: { intros m Present. rewrite Forall_forall in Fm. destruct (Fm m Present) as (n & xs & ->). now rewrite subst_nom. }
+      apply TyUnion with (ts := map (app_subst s) ts).
       * clear Fm Nd. induction F as [|m t ms' ts' Ht Fr IH]; [constructor|].
         constructor; [exact (tyof_subst _ _ _ _ _ Ht tm' Hs) | exact IH].
       * reflexivity.
@@ -323,7 +373,7 @@ Proof.
     + reflexivity.
     + reflexivity.
     + apply This; reflexivity.
-    + rewrite !subst_record. f_equal.
+    + rewrite !subst_record, !order_fields_map. f_equal. apply f_equal.
       match goal with H0 : Forall2 _ fs ?ts0 |- _ => assert_fails (constr_eq H0 F); rename H0 into F2; rename ts0 into ts2 end.
       repeat match goal with H : NoDup _ |- _ => clear H end.
       revert ts2 F2. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; intros ts2 F2;
@@ -333,7 +383,12 @@ Proof.
       exact (tyof_rel _ _ _ _ _ Hft _ _ _ Hft2 Ag This).
     + match goal with H0 : Forall2 _ ms ?ts0 |- _ => rename H0 into F2; rename ts0 into ts2 end.
       match goal with H0 : Forall _ (flat_map members ts2) |- _ => rename H0 into Fm2 end.
-      rewrite !subst_union. f_equal.
+      rewrite !subst_union, !order_members_map.
+      2,3: intros m Present; match goal with
+           | Formed : Forall _ ?all, Present : In m ?all |- _ =>
+               rewrite Forall_forall in Formed; destruct (Formed m Present) as (n & xs & ->); now rewrite subst_nom
+           end.
+      f_equal. apply f_equal.
       rewrite <- (flat_sub s1 ts Fm), <- (flat_sub s2 ts2 Fm2). f_equal.
       clear Fm Fm2. repeat match goal with H : NoDup _ |- _ => clear H end. revert ts2 F2. induction F as [|m t ms' ts' Ht Fr IH]; intros ts2 F2;
         inversion F2; subst; [reflexivity|].
@@ -492,14 +547,29 @@ Proof.
     + contradiction.
     + contradiction.
     + right. eauto.
-    + clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [contradiction|].
+    + assert (Source : forall fs : list (string * ty),
+          In g (gens (TRecord fs)) <-> exists q, In q fs /\ In g (gens (snd q))).
+      { intro fields. induction fields as [|[label t] rest IH]; cbn [gens fst snd In].
+        - split; [intros []|intros [q [[] _]]].
+        - change (In g (List.app (gens t) (gens (TRecord rest))) <->
+            exists q, ((label, t) = q \/ In q rest) /\ In g (gens (snd q))).
+          rewrite in_app_iff, IH. split.
+          + intros [Here|[q [Present Gen]]]; [exists (label, t); now auto|exists q; now auto].
+          + intros [q [[<-|Present] Gen]]; [now left|right; exists q; now auto]. }
+      assert (Raw : In g (gens (TRecord ts))).
+      { apply Source in Ig as [q [Present Gen]]. apply Source.
+        exists q. split; [eapply order_in; exact Present|exact Gen]. }
+      clear Ig Nd. rename Raw into Ig. cbn [gens] in Ig.
+      induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [contradiction|].
       destruct ft as [f t]. cbn in Ig. apply in_app_or in Ig as [Here|There];
         [exact (tyof_gens _ _ _ _ _ Hft g Here)|exact (IH There)].
     + subst flat. clear Fm Nd.
       assert (Flat : exists m, In m (flat_map members ts) /\ In g (gens m)).
-      { clear F. induction (flat_map members ts) as [|m rest IH]; [contradiction|].
+      { clear F. assert (Ordered : exists m, In m (order_members (flat_map members ts)) /\ In g (gens m)).
+        { induction (order_members (flat_map members ts)) as [|m rest IH]; [contradiction|].
         cbn in Ig. apply in_app_or in Ig as [Here|There]; [exists m; split; [left; reflexivity|exact Here]|].
-        destruct (IH There) as [m' [Im Ig']]. exists m'; split; [right; exact Im|exact Ig']. }
+          destruct (IH There) as [m' [Im Ig']]. exists m'; split; [right; exact Im|exact Ig']. }
+        destruct Ordered as [m [Present Gen]]. exists m. split; [eapply order_in; exact Present|exact Gen]. }
       destruct Flat as [m [Im Ig']]. apply in_flat_map in Im as [t [It Mem]].
       pose proof (member_gens t m g Mem Ig') as Igt. clear Ig Ig' Mem.
       induction F as [|a t' ms' ts' Ht Fr IH]; [contradiction|].

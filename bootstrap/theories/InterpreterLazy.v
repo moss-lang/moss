@@ -605,7 +605,7 @@ Fixpoint leval (fuel : nat) (P : program_view) (d : lenv) (g : locals) (st : mst
       | EBreak => I.Evaluation Breaking g st
       | ERecord fs =>
           match leval_arguments k P d g st (map snd fs) with
-          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (combine (map fst fs) ws))) g1 st1
+          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (order_fields (combine (map fst fs) ws)))) g1 st1
           | inr r => r
           end
       | EField e1 f =>

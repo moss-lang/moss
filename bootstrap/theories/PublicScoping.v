@@ -1296,7 +1296,7 @@ Proof.
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
-                  |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
+                  |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len Names F2
                   |F C exp o n ox ot rec t bare Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
       intros Fc Ff Cs Se; pose proof Cs as [Lc [Ps [Ts Mr]]].
     + exact (unit_scoped W C).
@@ -1339,7 +1339,7 @@ Proof.
       destruct Ft as [ftys [-> S]]. intros y' Iy. apply Rs. rewrite gens_record. apply in_flat_map.
       exists (n, t). split; [exact (slook_in _ _ _ _ S)|exact Iy].
     + destruct exp as [expected|].
-      { cbn [record_literal_shape] in Shape. destruct Shape as [-> _]. exact (Se _ eq_refl). }
+      { cbn [record_literal_shape] in Shape. destruct Shape as [_ ->]. exact (Se _ eq_refl). }
       clear Nd Len Shape.
       assert (Each : forall n t, In (n, t) ftys -> ScopedTy W C t).
       { induction Fields as [|[label field] [other value] fields values
@@ -1349,7 +1349,7 @@ Proof.
           injection Head as _ <-. cbn [record_field_fits snd] in Same. subst actual.
           exact (ex_scoped _ _ _ _ _ _ Child Fc Ff Cs (optscoped_none C)). }
       intros g G. rewrite gens_record in G. apply in_flat_map in G as [[n t] [Present G]].
-      exact (Each n t Present g G).
+      exact (Each n t (order_in _ _ _ _ Present) g G).
   (* ---- Branch ---- *)
   - destruct D as [F C b exp x t Bb|F C y exp x t Nb Ey]; intros Fc Ff Cs Se.
     + destruct exp as [e|]; [exact (Se e eq_refl)|exact (branch_ty_scoped W C b t (blke_scoped _ _ _ _ _ _ Bb Fc Ff Cs Se))].

@@ -243,9 +243,10 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
     Brackets W (fr_mod F) (c_ty C) s a bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
-    PayloadOf W s xs pay -> pay = TRecord ftys ->
-    (* every field given once, in any order; the record holds them in the payload's order *)
+    PayloadOf W s xs pay -> pay = TRecord (order_fields ftys) ->
+    (* Each field is evaluated in source order. *)
     NoDup (map fst fs) -> List.length fs = List.length ftys ->
+    map fst fs = map fst ftys ->
     Forall2 (fun ft xf => fst xf = fst ft /\
                exists n v vt, n = fst ft /\ In (n, v) fs /\
                  Ex W P F C (match v with Some y => y | None => AEPath [n] None end) (Some (snd ft)) (snd xf) vt /\
@@ -264,7 +265,7 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
                exists n v vt, n = fst ft /\ In (n, v) fs /\
                  Ex W P F C (record_field_source n v) (record_field_expected exp (snd ft)) (snd xf) vt /\
                  record_field_fits exp vt (snd ft)) ftys xfs ->
-    Ex W P F C (AEBareRecord fs) exp (ERecord xfs) (TRecord ftys)
+    Ex W P F C (AEBareRecord fs) exp (ERecord xfs) (TRecord (order_fields ftys))
 
 (* the payload type of a tag at its arguments *)
 

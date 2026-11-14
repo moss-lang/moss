@@ -20,6 +20,18 @@ Local Lemma check_result : forall (test : bool) message before value after,
   check test message before = Ok (value, after) -> test = true /\ value = tt /\ before = after.
 Proof. intros [] message before value after Run; [injection Run as <- ->; auto|discriminate]. Qed.
 
+Local Lemma record_field_types_names : forall given expected ordered,
+  record_field_types given expected = Ok ordered -> map fst given = map fst ordered.
+Proof.
+  induction given as [|[label syntax] rest IH]; intros expected ordered Read;
+    cbn [record_field_types rmap] in Read.
+  - now injection Read as <-.
+  - apply rbind_ok in Read as [field [Field Read]].
+    apply rbind_ok in Read as [tail [Tail Read]].
+    apply rbind_ok in Field as [t [_ Field]]. injection Field as <-.
+    injection Read as <-. cbn. f_equal. eapply IH; exact Tail.
+Qed.
+
 Section Constructs.
 Variables (E : env) (R : rec) (P : program).
 Let W := e_W E.
@@ -147,14 +159,21 @@ Proof.
   injection Present as _ <-.
   apply mbind_ok in Run as (arity & middle & Check & Run).
   apply check_result in Check as [Arity [_ <-]]. apply Nat.eqb_eq in Arity.
+  apply mbind_ok in Run as (ordered & middle & Read & Run).
+  apply pure_result in Read as [Ordered <-].
+  pose proof (record_field_types_names _ _ _ Ordered) as Names.
+  apply mbind_ok in Run as (shape & middle & Read & Run).
+  apply check_result in Read as [Shape [_ <-]].
+  apply PublicTypeFacts.ty_eqb_spec in Shape.
   apply mbind_ok in Run as (translated & finish & Fields & Run).
   injection Run as <- <- <-.
   destruct (record_fields_sound n Below _ _ _ _ _ _ _ Fields) as [Backward Typed].
   split; [exact Backward|]. intros Valid Post.
   destruct (Typed Valid Post) as [Final Proof]. split; [exact Final|].
   eapply ExRecord; [exact Resolved|now apply kind_is_spec|eapply brackets_sound; exact Rows|
-    now apply tag_arguments_read|eapply payload_of_sound; exact Payload|reflexivity|
-    now apply EaNumbering.checked_parameters_distinct|exact Arity|exact Proof].
+    now apply tag_arguments_read|eapply payload_of_sound; exact Payload|symmetry; exact Shape|
+    now apply EaNumbering.checked_parameters_distinct| |exact Names|exact Proof].
+  now apply (f_equal (@List.length fld)) in Names; rewrite !map_length in Names.
 Qed.
 
 Theorem synth_fields_sound : forall n,
@@ -206,19 +225,26 @@ Proof.
     injection TypeCheck as _ <-.
     apply mbind_ok in Run as (arity & middle & Check & Run).
     apply check_result in Check as [Arity [_ <-]]. apply Nat.eqb_eq in Arity.
+    apply mbind_ok in Run as (ordered & middle & Read & Run).
+    apply pure_result in Read as [Ordered <-].
+    pose proof (record_field_types_names _ _ _ Ordered) as Names.
+    apply mbind_ok in Run as (shape & middle & Read & Run).
+    apply check_result in Read as [Shape [_ <-]].
+    apply PublicTypeFacts.ty_eqb_spec in Shape.
     apply mbind_ok in Run as (values & finish & Fields & Run).
     injection Run as <- <- <-.
     destruct (record_fields_sound n Below _ _ _ _ _ _ _ Fields) as [Backward Typed].
     split; [exact Backward|]. intros Valid Post.
     destruct (Typed Valid Post) as [Final Evidence]. split; [exact Final|].
-    eapply ExBareRecord; [exact Unique|exact Arity| |exact Evidence].
-    split; [reflexivity|now apply EaNumbering.checked_parameters_distinct].
+    replace (TRecord field_types) with (TRecord (order_fields ordered)) at 2 by exact Shape.
+    eapply ExBareRecord; [exact Unique| |split; [exact Names|symmetry; exact Shape]|exact Evidence].
+    now apply (f_equal (@List.length fld)) in Names; rewrite !map_length in Names.
   - apply mbind_ok in Run as ([field_types values] & finish & Fields & Run).
     injection Run as <- <- <-.
     destruct (synth_fields_sound n Below _ _ _ _ _ _ Fields) as [Backward Typed].
     split; [exact Backward|]. intros Valid Post.
     destruct (Typed Valid Post) as [Final [Names Evidence]]. split; [exact Final|].
-    eapply ExBareRecord; [exact Unique| |exact Names|exact Evidence].
+    eapply ExBareRecord; [exact Unique| |exact (conj Names I)|exact Evidence].
     apply (f_equal (@List.length fld)) in Names. now rewrite !map_length in Names.
 Qed.
 

@@ -234,6 +234,13 @@ Definition conditional_tags : er (nat * nat * nat) :=
   let! false_tag := ropt (lang_sym W "bool" NSName "False") "the library's False is unavailable" in
   Ok (bool_tag, true_tag, false_tag).
 
+Definition record_field_types (given : list (name * option aexpr))
+    (expected : list (fld * ty)) : er (list (fld * ty)) :=
+  rmap (fun field =>
+    let name := fst field in
+    let! t := ropt (slook name expected) ("record has no field `" ++ name ++ "`") in
+    Ok (name, t)) given.
+
 Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct n} : M (expr * ty) :=
   match n with
   | 0 => fail "expression: too deep"
@@ -375,7 +382,9 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
                     | missing => fail ("missing field(s) " ++ String.concat ", " (map fst missing) ++ " of " ++ qs W s)
                     end in
           let* _ := check (Nat.eqb (List.length fs) (List.length ftys)) ("the fields of " ++ qs W s) in
-          let* xfs := mmap_fields n' F C fs ftys in
+          let* ordered := pure (record_field_types fs ftys) in
+          let* _ := check (ty_eqb (TRecord (order_fields ordered)) pay) "record fields differ from the tag payload" in
+          let* xfs := mmap_fields n' F C fs ordered in
           ret (ETag s xs (ERecord xfs), TNom s xs)
       | _ => fail (qs W s ++ " does not have a record payload")
       end
@@ -386,13 +395,15 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       match exp with
       | None =>
           let* (ftys, xfs) := synth_fields n' F C fs in
-          ret (ERecord xfs, TRecord ftys)
+          ret (ERecord xfs, TRecord (order_fields ftys))
       | Some (TRecord ftys) =>
           let* _ := match suniq_dup (map fst ftys) with
                     | Some f => fail ("duplicate expected field `" ++ f ++ "`")
                     | None => ret tt end in
           let* _ := check (Nat.eqb (List.length fs) (List.length ftys)) "wrong number of record fields" in
-          let* xfs := mmap_fields n' F C fs ftys in
+          let* ordered := pure (record_field_types fs ftys) in
+          let* _ := check (ty_eqb (TRecord (order_fields ordered)) (TRecord ftys)) "record fields differ from the expected type" in
+          let* xfs := mmap_fields n' F C fs ordered in
           ret (ERecord xfs, TRecord ftys)
       | Some _ => fail "a record literal needs a record type"
       end

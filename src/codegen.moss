@@ -3017,9 +3017,39 @@ assume Std {
       ast::node4(ast::k_ex_path(), ast::path_of(names), ast::none(), 0, 0)
     }
 
-    # In synthesis the written fields determine the type and its layout.
+    fn record_needs_reorder(e: Int): Bool {
+      var i = 1;
+      while i < ast::c_of(e) {
+        let previous = ast::kid_at(ast::b_of(e), i - 1);
+        let current = ast::kid_at(ast::b_of(e), i);
+        if ast::a_of(previous) > ast::a_of(current) { return true; }
+        i = i + 1;
+      }
+      false
+    }
+
+    fn load_record_fields(body: IntList, e: Int, rec: Int, locals: IntList) {
+      var f = 0;
+      while f < types::field_count(rec) {
+        let name = types::field_name_at(rec, f);
+        var i = 0;
+        while i < locals.length() {
+          if ast::a_of(ast::kid_at(ast::b_of(e), i)) == name {
+            let local = locals.get(i);
+            if ast::is_some(local) { load_local(body, local); }
+            break;
+          }
+          i = i + 1;
+        }
+        f = f + 1;
+      }
+    }
+
+    # In synthesis the initializers supply the field types.
     fn infer_record(body: IntList, e: Int, m: Int, emit: Bool): Int {
       let members = int_list();
+      let reorder = emit & record_needs_reorder(e);
+      let locals = int_list();
       var i = 0;
       while i < ast::c_of(e) {
         let field = ast::kid_at(ast::b_of(e), i);
@@ -3033,16 +3063,21 @@ assume Std {
         }
         let value = record_field_value(field);
         let ty = if emit { emit_expr(body, value, m) } else { type_of(value, m) };
+        if reorder {
+          let local = reveal(ast::none(), ty);
+          store_local(body, local);
+          locals.push(local);
+        }
         members.push(name);
         members.push(ty);
         i = i + 1;
       }
-      types::intern_ty(types::kd_record(), ast::none(), members)
+      let rec = types::intern_ty(types::kd_record(), ast::none(), members);
+      if reorder { load_record_fields(body, e, rec, locals); }
+      rec
     }
 
-    # `Tag { f = e, ... }`: the payload's fields, in the record's own
-    # order whatever order they are written in. Every field once, and
-    # only fields the record has.
+    # Evaluate in source order and arrange the resulting values in layout order.
     fn emit_record(body: IntList, e: Int, m: Int, expected: Int): Int {
       var result = expected;
       var rec = expected;
@@ -3067,51 +3102,52 @@ assume Std {
           return ty_none();
         }
       }
-      var i = 0;
-      while i < ast::c_of(e) {
-        let rf = ast::kid_at(ast::b_of(e), i);
-        if !ast::is_some(types::field_index(rec, ast::a_of(rf))) {
-          cg_error(c_bad_type(), ast::a_of(rf));
-        }
-        var j = i + 1;
-        while j < ast::c_of(e) {
-          if ast::a_of(ast::kid_at(ast::b_of(e), j)) == ast::a_of(rf) {
-            cg_error(c_bad_type(), ast::a_of(rf));
-          }
-          j = j + 1;
-        }
-        i = i + 1;
-      }
+      let seen = int_list();
       var f = 0;
       while f < types::field_count(rec) {
-        let name = types::field_name_at(rec, f);
-        let ty = field_ty(rec, f);
-        var given = ast::none();
-        var k = 0;
-        while k < ast::c_of(e) {
-          let rf = ast::kid_at(ast::b_of(e), k);
-          if ast::a_of(rf) == name {
-            given = rf;
-          }
-          k = k + 1;
-        }
-        if !ast::is_some(given) {
-          cg_error(c_bad_type(), name);
-        } else if bare {
-          emit_as(body, record_field_value(given), m, ty);
-        } else if ast::is_some(ast::b_of(given)) {
-          emit_as(body, ast::b_of(given), m, ty);
-        } else {
-          # `{ f }` is `{ f = f }`.
-          let local = find_local(name);
-          if ast::is_some(local) {
-            load_local(body, local);
-          } else {
-            semantic_error(prog::e_scope(), name);
-          }
-        }
+        seen.push(0);
         f = f + 1;
       }
+      let reorder = record_needs_reorder(e);
+      let locals = int_list();
+      var i = 0;
+      while i < ast::c_of(e) {
+        let given = ast::kid_at(ast::b_of(e), i);
+        let name = ast::a_of(given);
+        let index = types::field_index(rec, name);
+        var saved = ast::none();
+        if !ast::is_some(index) {
+          cg_error(c_bad_type(), name);
+        } else {
+          if seen.get(index) != 0 { cg_error(c_bad_type(), name); }
+          seen.set(index, 1);
+          let ty = field_ty(rec, index);
+          if bare {
+            emit_as(body, record_field_value(given), m, ty);
+          } else if ast::is_some(ast::b_of(given)) {
+            emit_as(body, ast::b_of(given), m, ty);
+          } else {
+            let local = find_local(name);
+            if ast::is_some(local) {
+              load_local(body, local);
+            } else {
+              semantic_error(prog::e_scope(), name);
+            }
+          }
+          if reorder {
+            saved = reveal(ast::none(), ty);
+            store_local(body, saved);
+          }
+        }
+        if reorder { locals.push(saved); }
+        i = i + 1;
+      }
+      f = 0;
+      while f < types::field_count(rec) {
+        if seen.get(f) == 0 { cg_error(c_bad_type(), types::field_name_at(rec, f)); }
+        f = f + 1;
+      }
+      if reorder { load_record_fields(body, e, rec, locals); }
       result
     }
 

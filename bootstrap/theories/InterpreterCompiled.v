@@ -725,7 +725,7 @@ Fixpoint cc (e : expr) {struct e} : code :=
       | 0 => I.Evaluation OutOfFuel g st
       | S k =>
           match ca k d g st with
-          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (combine fields ws))) g1 st1
+          | inl (ws, g1, st1) => I.Evaluation (Normal (VRecord (order_fields (combine fields ws)))) g1 st1
           | inr r => r
           end
       end

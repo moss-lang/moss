@@ -162,7 +162,7 @@ Proof.
       |F C exp source expected code actual Ret Value Fits
       |F C exp Loop
       |F C exp path brackets given tag readings arguments payload field_types field_code
-         Resolve Kind Brackets Readings Payload Shape Distinct Count Fields
+         Resolve Kind Brackets Readings Payload Shape Distinct Count Names Fields
       |F C exp object field value actual payload t bare Object Payload Field
       |F C exp given field_types field_code Distinct Count Shape Fields].
     + exists PlanUnit. split; [constructor|split; [reflexivity|finish_placements]].
@@ -215,7 +215,7 @@ Proof.
     + exists PlanBreak. split; [now constructor|split; [reflexivity|finish_placements]].
     + subst payload.
       read_record_fields read_expression W P F C given ReadFields.
-      destruct (ReadFields (Some (TRecord field_types)) _ _ Fields) as (plans & FieldsTyped & <- & ?Placed).
+      destruct (ReadFields (Some (TRecord (order_fields field_types))) _ _ Fields) as (plans & FieldsTyped & <- & ?Placed).
       exists (PlanRecord tag arguments plans). split; [eapply TypesRecord; eassumption|split; [reflexivity|finish_placements]].
     + destruct (read_expression _ _ _ _ _ _ Object) as (plan & Typed & <- & ?Placed).
       exists (PlanField plan field). split; [eapply TypesField; eassumption|split; [reflexivity|finish_placements]].

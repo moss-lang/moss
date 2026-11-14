@@ -1,0 +1,44 @@
+import "../../lib/wasi.moss" use WasiStd;
+import "../../lib/wasistd.moss" use Branch;
+import "../../lib/wasm.moss" use Wasm;
+import "../../lib/wasip1.moss" use WasiCore;
+
+tag A;
+tag B;
+type T;
+assume T { tag Wrap[T](T); }
+
+type AB = A | B;
+type BA = B | A;
+type RecordAB = { first: A, second: B };
+type RecordBA = { second: B, first: A };
+
+fn union_identity(x: Wrap[T=AB]): Wrap[T=BA] { x }
+fn record_identity(x: Wrap[T=RecordAB]): Wrap[T=RecordBA] { x }
+
+assume Std {
+  type Pair = { left: Char, right: Char };
+  tag TaggedPair { left: Char, right: Char };
+
+  fn mark(c: Char): Char { putchar(c); c }
+
+  fn show(pair: Pair) {
+    putchar(pair.left);
+    putchar(pair.right);
+    putchar(char::newline);
+  }
+}
+
+assume Wasm, WasiCore, Branch {
+  fn main() {
+    bind WasiStd;
+    let wrapped_union = union_identity(Wrap[T=AB](A));
+    let wrapped_record = record_identity(Wrap[T=RecordAB]({ second = B, first = A }));
+
+    let inferred = { right = mark(char::b), left = mark(char::a) };
+    show(inferred);
+    show({ right = mark(char::d), left = mark(char::c) });
+    let tagged = TaggedPair { right = mark(char::f), left = mark(char::e) };
+    show({ left = tagged.left, right = tagged.right });
+  }
+}

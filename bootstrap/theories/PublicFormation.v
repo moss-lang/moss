@@ -3,7 +3,7 @@
    and every union has nominal members with distinct heads, at every depth.
    Substitution by formed types keeps types formed, and so do the readings
    TyOf, Brackets and SigOf over formed type tables. *)
-From Stdlib Require Import List String Arith Bool.
+From Stdlib Require Import List String Arith Bool Sorting.Permutation.
 From NM Require AuditBase.
 From NM Require Import Audit PublicTypeRead PublicCallRealize PublicArms.
 From NM Require Import LegacyBodyJudgments.
@@ -118,9 +118,15 @@ Proof.
     + cbn. split; [constructor|split; [constructor|exact I]].
     + exact I.
     + exact (Th t eq_refl).
-    + cbn [TyFormed]. clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [exact I|].
-      destruct ft as [f t]. split; [exact (tyof_formed _ _ _ _ _ Hft Tm Th)|exact IH].
-    + apply union_formed. split; [exact Fm|split; [exact Nd|]]. subst flat. clear Fm Nd.
+    + apply record_formed. intros label t Present. apply order_in in Present.
+      clear Nd. induction F as [|nt ft fs' ts' [E1 Hft] Fr IH]; [contradiction|].
+      destruct Present as [Here|Present]; [subst ft; exact (tyof_formed _ _ _ _ _ Hft Tm Th)|exact (IH Present)].
+    + apply union_formed. assert (Perm : Permutation (order_members flat) flat) by apply order_perm.
+      split.
+      { rewrite Forall_forall in Fm |- *. intros t Present. apply Fm. eapply Permutation_in; eassumption. }
+      split.
+      { apply (Permutation_NoDup (Permutation_sym (Permutation_map A.head Perm))). exact Nd. }
+      apply (Permutation_Forall (Permutation_sym Perm)). subst flat. clear Fm Nd Perm.
       induction F as [|a t' ms' ts' Ht Fr IH]; [constructor|]. cbn [flat_map].
       apply Forall_app. split; [|exact IH].
       apply members_of_formed. exact (tyof_formed _ _ _ _ _ Ht Tm Th).
@@ -1767,7 +1773,7 @@ Proof.
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv
                   |F C exp text x t Nt Lt|F C exp c b cx' bx bt bool_tag true_tag false_tag Tags Cd Bb Of Bt|F C exp c b y cx' bx bt ex' et t bool_tag true_tag false_tag Tags Cd Bb Br Of J
                   |F C exp s arms sx st xarms t Es Ar|F C exp b x t Bb|F C exp Rt|F C exp e expected v actual Rt Ee Fi
-                  |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len F2
+                  |F C exp Lp|F C exp pa a fs s bs xs pay ftys xfs R K B Fx Pay Ep Nd Len Names F2
                   |F C exp o n ox ot rec t bare Eo Rc Ft|F C exp fs ftys xfs Nd Len Shape Fields];
       intros Fc Ff Oe.
     + exact (tyok_unit W).
@@ -1807,7 +1813,7 @@ Proof.
         exact (payload_ok W _ _ _ Pay (proj2 (nom_ok_elim W _ _ Ot))). }
       destruct Ft as [ftys [-> S]]. exact (record_ok_elim W _ _ _ Rok (slook_in _ _ _ _ S)).
     + destruct exp as [expected|].
-      { cbn [record_literal_shape] in Shape. destruct Shape as [-> _]. exact (Oe _ eq_refl). }
+      { cbn [record_literal_shape] in Shape. destruct Shape as [_ ->]. exact (Oe _ eq_refl). }
       clear Nd Len Shape.
       assert (Each : forall n t, In (n, t) ftys -> TyOk W t).
       { induction Fields as [|[label field] [other value] fields values
@@ -1817,9 +1823,9 @@ Proof.
           injection Head as _ <-. cbn [record_field_fits snd] in Same. subst actual.
           exact (ex_ok _ _ _ _ _ _ Child Fc Ff (optok_none W)). }
       split.
-      * apply record_formed. intros n t Present. exact (proj1 (Each n t Present)).
+      * apply record_formed. intros n t Present. exact (proj1 (Each n t (order_in _ _ _ _ Present))).
       * intros g G. rewrite gens_record in G. apply in_flat_map in G as [[n t] [Present G]].
-        exact (proj2 (Each n t Present) g G).
+        exact (proj2 (Each n t (order_in _ _ _ _ Present)) g G).
   (* ---- Branch ---- *)
   - destruct D as [F C b exp x t Bb|F C y exp x t Nb Ey]; intros Fc Ff Oe.
     + destruct exp as [e|]; [exact (Oe e eq_refl)|exact (branch_ty_ok W b t (blke_ok _ _ _ _ _ _ Bb Fc Ff Oe))].

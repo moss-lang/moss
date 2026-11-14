@@ -19,6 +19,7 @@ Extraction Language OCaml.
 Set Warnings "-extraction-default-directory".
 (* Audit's field names are strings: compare them natively. *)
 Extract Inlined Constant String.eqb => "String.equal".
+Extract Inlined Constant String.leb => "(fun a b -> String.compare a b <= 0)".
 Extraction NoInline PrimArray.array.
 (* Preserve the exact unsigned conversion and use native integers for
    the common case of scalar payloads that fit. *)

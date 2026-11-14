@@ -2,7 +2,7 @@
    calls agree under that renaming. *)
 From Stdlib Require Import List Bool Arith.
 From NM Require AuditBase.
-From NM Require Import Audit BaseFacts PublicValueTyping RuntimeRenaming RuntimeRenamingEnv RuntimeRenamingControl.
+From NM Require Import Audit BaseFacts PublicTypeRead PublicValueTyping RuntimeRenaming RuntimeRenamingEnv RuntimeRenamingControl.
 Import AuditBase.Semantics ListNotations.
 
 Module InterpreterRenaming (Prims : PRIMITIVES) (I : INTERP Prims).
@@ -67,10 +67,16 @@ Local Lemma rename_record_names : forall (fields : list (fld * expr)),
 Proof. induction fields as [|[name field] rest IH]; cbn; congruence. Qed.
 
 Local Lemma rename_record_values : forall fields values,
-  VRecord (combine fields (map (rename_value rename) values)) =
-  rename_value rename (VRecord (combine fields values)).
+  VRecord (order_fields (combine fields (map (rename_value rename) values))) =
+  rename_value rename (VRecord (order_fields (combine fields values))).
 Proof.
-  intros fields values. cbn [rename_value]. f_equal. revert fields.
+  intros fields values. cbn [rename_value]. f_equal.
+  set (rename_field := fun q : fld * value => (fst q, rename_value rename (snd q))).
+  assert (Map : forall entries : list (fld * value),
+    map (fun '(name, value) => (name, rename_value rename value)) entries =
+    map rename_field entries).
+  { intro entries. apply map_ext. intros []; reflexivity. }
+  rewrite Map. unfold rename_field. rewrite order_fields_map. f_equal. revert fields.
   induction values as [|value rest IH]; intros [|field fields]; cbn; try reflexivity.
   now rewrite IH.
 Qed.

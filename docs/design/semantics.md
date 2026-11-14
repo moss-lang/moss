@@ -319,13 +319,15 @@ at use sites, like `Range[T=NameId]`, absolutely stays — see §6.)
 - Tuples `(A, B)`, including the singleton `(A,)` and the nullary tuple
   `()`, also called unit. `(A)` groups a type. Values use the same syntax
   and bind their elements by position with a tuple pattern.
-- Structural records `{ from: TokenId, name: Option[T=TokenId] }`. Records
-  are structural; nominality comes only from tag declarations wrapping them.
+- Structural records `{ from: TokenId, name: Option[T=TokenId] }`. A record
+  type is identified by its field names and their types. Reordering the fields
+  gives the same type. A tag declaration can give a record nominal identity.
 - Unions `A | B | C`, including the leading-pipe multiline form. Members
   must be *nominal* types (units, tags) with distinct heads — the union is
-  discriminated by nominal identity, and matching tests that identity. An
-  abstract type symbol may appear as a member *only if* the context the
-  union is written in already constrains that symbol to a specific nominal
+  discriminated by nominal identity, and matching tests that identity.
+  Reordering a union's members gives the same type, including inside type
+  arguments. An abstract type symbol may appear as a member *only if* the
+  context the union is written in constrains that symbol to a specific nominal
   type; a bare abstract member like `src/lex.moss`'s `Char | Eof` is illegal
   and gets a nominal wrapper instead (§12). This keeps head-distinctness
   checkable where the union is written, per [D16].
@@ -888,8 +890,8 @@ a semicolon starts a block. Only separators at the brace's own depth
 count. In expression position, `{}` is an empty record. Where the syntax
 requires a block, including function bodies and `if` branches, `{}` is
 an empty block. An anonymous record with an expected record type checks
-each field and uses that type's field order. When synthesizing, fields
-supply their own types and retain their written order.
+each field against the expected type for its name. When synthesizing,
+the initializers supply the field types.
 
 *Evaluation order (November 2026, DECIDED by the designer).* A call
 evaluates its receiver first, if it has one, then its arguments left to
@@ -898,8 +900,9 @@ evaluates `a`, `b`. An operator is a method call ([D68]), so `a + b`
 evaluates `a` before `b`, and both always ([D68]'s no `&&`). Nothing
 had said so. Both compilers and the Rocq reference interpreter already
 did this; the bootstrap's Python interpreter evaluated the arguments
-before the receiver, and was changed to match, with a test. Not yet
-specified: the order of a record construction's fields.
+before the receiver, and was changed to match, with a test. Record
+initializers, including those in tagged record literals, evaluate left to
+right in the order written at the construction site.
 
 **[D33] DECIDED (no operators in the MVP).** No unary or binary operator
 expressions at all for now; the operator tokens stay lexed but reserved

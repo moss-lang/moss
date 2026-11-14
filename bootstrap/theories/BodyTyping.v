@@ -465,9 +465,9 @@ Theorem record_source_has_plan : forall W P F C path brackets given,
 Proof.
   intros W P F C path brackets given Children expected code t Typed. inversion Typed; subst.
   lazymatch goal with
-  | Payload : PayloadOf W ?tag ?arguments (TRecord ?field_types),
+  | Payload : PayloadOf W ?tag ?arguments (TRecord (order_fields ?field_types)),
     Fields : Forall2 _ ?field_types ?field_code |- _ =>
-    destruct (record_fields_have_plan W P F C given (Some (TRecord field_types)) field_types field_code Children Fields)
+    destruct (record_fields_have_plan W P F C given (Some (TRecord (order_fields field_types))) field_types field_code Children Fields)
       as (plans & TypedFields & <-);
     exists (PlanRecord tag arguments plans); split; [eapply TypesRecord; eassumption|reflexivity]
   end.

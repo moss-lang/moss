@@ -152,7 +152,7 @@ Proof.
     + reflexivity.
     + reflexivity.
     + apply This; reflexivity.
-    + rewrite !subst_record. f_equal.
+    + rewrite !subst_record, !order_fields_map. f_equal. apply f_equal.
       match goal with H0 : Forall2 _ fs ?ts0 |- _ => assert_fails (constr_eq H0 F); rename H0 into F2; rename ts0 into ts2 end.
       repeat match goal with H : NoDup _ |- _ => clear H end.
       assert (AgF : forall nt, In nt fs -> AgreeOn (FreeIn W (w_reqs W) p (snd nt)) tm tm2).
@@ -164,7 +164,12 @@ Proof.
       exact (tyof_on _ _ _ _ _ Hft _ _ _ Hft2 (AgF nt (or_introl eq_refl)) This).
     + match goal with H0 : Forall2 _ ms ?ts0 |- _ => rename H0 into F2; rename ts0 into ts2 end.
       match goal with H0 : Forall _ (flat_map members ts2) |- _ => rename H0 into Fm2 end.
-      rewrite !subst_union. f_equal.
+      rewrite !subst_union, !order_members_map.
+      2,3: intros m Present; match goal with
+           | Formed : Forall _ ?all, Present : In m ?all |- _ =>
+               rewrite Forall_forall in Formed; destruct (Formed m Present) as (n & xs & ->); now rewrite subst_nom
+           end.
+      f_equal. apply f_equal.
       rewrite <- (flat_sub s ts Fm), <- (flat_sub s ts2 Fm2). f_equal.
       clear Fm Fm2. repeat match goal with H : NoDup _ |- _ => clear H end.
       assert (AgM : forall t, In t ms -> AgreeOn (FreeIn W (w_reqs W) p t) tm tm2).

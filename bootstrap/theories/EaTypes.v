@@ -98,7 +98,7 @@ Fixpoint ty_of (fuel : nat) (p : string) (tm : list (nat * ty)) (th : option ty)
       | ATRec fs =>
           let! _ := rcheck (snodupb (map fst fs)) ("the record type " ++ "{" ++ String.concat ", " (map fst fs) ++ "}" ++ " names a field twice") in
           let! ts := rmap (fun nt => let! t := ty_of f p tm th (snd nt) in Ok (fst nt, t)) fs in
-          Ok (TRecord ts)
+          Ok (TRecord (order_fields ts))
       | ATUnion ms =>
           let! ts := rmap (ty_of f p tm th) ms in
           let flat := flat_map members ts in
@@ -107,7 +107,7 @@ Fixpoint ty_of (fuel : nat) (p : string) (tm : list (nat * ty)) (th : option ty)
                     | Some x => Err ("union member " ++ qty W x ++ " is not nominal (D15)")
                     | None => Ok tt end in
           let! _ := union_heads flat [] in
-          Ok (TUnion flat)
+          Ok (TUnion (order_members flat))
       | ATRef pa br =>
           let! g := ropt (resolve_sym W p pa) (bq (show_path pa) ++ " is not in scope") in
           match kind_sym W g with

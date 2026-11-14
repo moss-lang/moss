@@ -563,8 +563,8 @@ DRAFT NOTES — where the draft departs from the elaborator (Elab.v), and
       ran the program.  synth_record now rejects it ("names a field
       twice, so no record literal builds it").  Such a type is still
       readable (TyRec), and `P(r)`, patterns and field reads of it are
-      unchanged.  Test: tests/errors/record_field_twice.moss (the oracle
-      ran it and exited 1; the self-hosted compiler still accepts it).
+      unchanged at the time. Both compilers now reject the regression case
+      in `tests/errors/record_field_twice.moss`.
   63. (relation incomplete; adjusted to the elaborator) The literal `0`
       needs only lib/int.moss's `zero`: the elaborator types it at
       zero's type, but ExLit asked for `one` in force at the literal's

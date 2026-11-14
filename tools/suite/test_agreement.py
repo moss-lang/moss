@@ -67,14 +67,6 @@ SELF_HOSTED_BUG_ITEM_BRACKETS = (
 
 SELF_HOSTED_BUG_MERGE_CYCLE = "self-hosted compiler bug: a cyclic merge is accepted"
 
-# A record literal of a payload that names a field twice: the oracle (and
-# Part V's ExRecord) asks for every field once, the self-hosted compiler
-# does not check it (Audit.v note 62).
-
-SELF_HOSTED_BUG_FIELD_TWICE = (
-    "self-hosted compiler bug: a record literal of a payload that names a field twice is accepted"
-)
-
 # AUDIT-CHANGES #14: Audit.v accepts the program, by the consolidation
 # reading of `link_site`; the self-hosted compiler rejects it (D84 3d).
 
@@ -133,7 +125,6 @@ GAPS = [
     ("tests/errors/family_poly_nontype.moss", Accept, Reject, RECORDED),
     ("tests/errors/functor_output_input_changed.moss", Reject, Accept, AUDIT_ACCEPTS_14),
     ("tests/errors/merge_cyclic.moss", Accept, Reject, SELF_HOSTED_BUG_MERGE_CYCLE),
-    ("tests/errors/record_field_twice.moss", Accept, Reject, SELF_HOSTED_BUG_FIELD_TWICE),
     ("tests/errors/sameneed_ambiguous.moss", Accept, Reject, RECORDED),
     ("tests/errors/sameneed_ambiguous_other.moss", Accept, Reject, RECORDED),
     ("tests/errors/type_brackets.moss", Accept, Reject, SELF_HOSTED_BUG_TYPE_BRACKETS),

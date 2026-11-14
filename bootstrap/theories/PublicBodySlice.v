@@ -1059,20 +1059,36 @@ Proof.
     constructor; auto.
 Qed.
 
+Lemma ordered_fields_typed : forall H values types,
+  fields_typed W P H values types -> fields_typed W P H (order_fields values) (order_fields types).
+Proof.
+  intros H values types Fields.
+  assert (Insert : forall name value tau values types,
+    value_typed W P H value tau -> fields_typed W P H values types ->
+    fields_typed W P H
+      (insert_ordered (fun x y => String.leb (fst x) (fst y)) (name, value) values)
+      (insert_ordered (fun x y => String.leb (fst x) (fst y)) (name, tau) types)).
+  { intros name value tau vs ts Typed Tail. induction Tail; cbn.
+    - repeat constructor; assumption.
+    - destruct (String.leb name name0); constructor; auto using fields_typed. }
+  induction Fields; cbn [order_fields fold_right]; auto using fields_typed.
+Qed.
+
 Lemma record_typed : forall H d ftys (xfs : list (fld * expr)) ws,
   map fst xfs = map fst ftys ->
   Forall2 (fun w t => value_typed W P H w (ground d t)) ws (map snd ftys) ->
-  value_typed W P H (VRecord (combine (map fst xfs) ws)) (ground d (TRecord ftys)).
+  value_typed W P H (VRecord (order_fields (combine (map fst xfs) ws)))
+    (ground d (TRecord (order_fields ftys))).
 Proof.
-  intros H d ftys xfs ws Names T. rewrite ground_record, Names. constructor.
-  apply fields_combine; exact T.
+  intros H d ftys xfs ws Names T. rewrite ground_record, order_fields_map, Names. constructor.
+  apply ordered_fields_typed, fields_combine, T.
 Qed.
 
 Lemma record_eval : forall k, Below (Nat.pred k) ->
   forall F C breaks ftys xfs d types H g st,
   Forall2 (ArgSafe F C breaks) (map snd xfs) (map snd ftys) ->
   map fst xfs = map fst ftys -> Pre k F C d types H g st ->
-  Outcome F d H types (TRecord ftys) breaks (AR.O.I.eval k P d g st (ERecord xfs)).
+  Outcome F d H types (TRecord (order_fields ftys)) breaks (AR.O.I.eval k P d g st (ERecord xfs)).
 Proof.
   intros [|k] Bel F C breaks ftys xfs d types H g st Args Names Pre0; [exact Logic.I|].
   cbn [AR.O.I.eval]. pose proof (args_safe k Bel k (le_n k) _ _ _ _ _ d types H g st Args (pre_lower Pre0)) as Out.
@@ -1080,7 +1096,7 @@ Proof.
     change (AR.O.I.eval_arguments j V d0 g0 s0 es) with (AR.O.I.eval_arguments k P d g st (map snd xfs)) end.
   destruct (AR.O.I.eval_arguments k P d g st (map snd xfs)) as [[[ws g'] st']|r]; cbn in Out; hnf.
   - destruct Out as [H' [E [S [L T]]]]. exists H'; repeat split; auto.
-    match goal with |- value_typed _ _ _ _ ?T => change T with (ground d (TRecord ftys)) end.
+    match goal with |- value_typed _ _ _ _ ?T => change T with (ground d (TRecord (order_fields ftys))) end.
     exact (record_typed _ _ _ _ _ Names T).
   - destruct Out as [Out NotNormal]. eapply outcome_pass; [exact (fun x => x)|exact NotNormal|exact Out].
 Qed.
@@ -5727,7 +5743,7 @@ Proof.
       |F C exp Ret
       |F C exp e expected v actual Ret De Fits
       |F C exp Loop
-      |F C exp pa a fs s bs xs pay ftys xfs R K Br F2 Pay PayEq Nd Len Fields
+      |F C exp pa a fs s bs xs pay ftys xfs R K Br F2 Pay PayEq Nd Len SourceNames Fields
       |F C exp o n ox ot rcd t bare Do Rcd Fld|F C exp fs ftys xfs Nd Len Shape Fields];
       intros d types H lg lst Pre0.
     + (* unit *) cbn [AR.O.I.eval]. eapply outcome_now; [exact Pre0|constructor].
@@ -5879,14 +5895,14 @@ Proof.
     + (* break *) cbn [AR.O.I.eval]. pose proof Pre0 as [_ [_ [L [S _]]]].
       split; [apply A.BkBreak|]. split; [exact Loop|]. exists H; repeat split; auto. apply extends_refl.
     + (* record *) subst pay. cbn [AR.O.I.eval].
-      destruct (record_args F C (Some (TRecord ftys)) fs ftys xfs (A.Breaks W (A.fr_mod F) (AERec pa a fs))
+      destruct (record_args F C (Some (TRecord (order_fields ftys))) fs ftys xfs (A.Breaks W (A.fr_mod F) (AERec pa a fs))
         (fun n y Present Break => @A.BkRec W _ pa a fs n y Present Break) Fields) as [Args Names].
       pose proof (record_eval k (fun j Le => Bel j ltac:(lia)) F C _ ftys xfs d types H lg lst
         Args Names (pre_lower Pre0)) as Out.
       apply (outcome_seq _ F C d types H lg lst _ _ _ _ _ _ Pre0 (fun B => B) Out).
       intros H1 g1 st1 w E1 [_ [_ [L1 [S1 _]]]] T1.
       apply outcome_tag; [exact S1|exact L1|].
-      exact (TC.tag_preserves W Prog argv read d H1 s xs (TRecord ftys) w
+      exact (TC.tag_preserves W Prog argv read d H1 s xs (TRecord (order_fields ftys)) w
         Pay T1).
     + (* field *) cbn [AR.O.I.eval].
       pose proof (sex F C o None ox ot Do d types H lg lst (pre_lower Pre0)) as Out.

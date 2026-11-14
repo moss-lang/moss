@@ -17,7 +17,7 @@ import "./prog.moss" as prog;
 # Layout is [D59]: every value is a finite run of Wasm scalars and the
 # compiler allocates nothing. `()` is no slots; a unit is one, holding
 # its code; a nominal tag is exactly its payload ([D58]); a record is its
-# fields' runs, one after another, in declaration order; a union of
+# fields' runs, one after another, in canonical order; a union of
 # units is one scalar, and any wider union is a discriminant followed by
 # room for its widest member.
 
@@ -27,8 +27,7 @@ assume Std {
   fn kd_nominal(): Int { 2 }
   fn kd_abstract(): Int { 3 }
   fn kd_union(): Int { 4 }
-  # A record's members alternate: field name, field type, in declaration
-  # order. Field order is part of the type, as it is in the bootstrap.
+  # A record's members alternate: field name, field type.
   fn kd_record(): Int { 5 }
 
   val ty_kind: IntList;
@@ -90,6 +89,8 @@ assume Std {
 
     # Hash-consed: scan for an identical row before adding one.
     fn intern_ty(kind: Int, sym: Int, members: IntList): Int {
+      if kind == kd_record() { sort_members(members, 2); }
+      if kind == kd_union() { sort_members(members, 1); }
       var t = 0;
       while t < ty_count() {
         if ty_kind.get(t) == kind {
@@ -123,6 +124,30 @@ assume Std {
         i = i + 1;
       }
       ty_count() - 1
+    }
+
+    # Records are keyed by field name, unions by the declaring tag. A
+    # member's type arguments can change under substitution, so they do
+    # not determine the position of its payload in the layout.
+    fn sort_members(members: IntList, stride: Int) {
+      var i = stride;
+      while i < members.length() {
+        let member = members.get(i);
+        let key = if stride == 1 { sym_of(member) } else { member };
+        let field_type = if stride == 2 { members.get(i + 1) } else { ast::none() };
+        var j = i;
+        while j > 0 {
+          let previous = members.get(j - stride);
+          let previous_key = if stride == 1 { sym_of(previous) } else { previous };
+          if previous_key <= key { break; }
+          members.set(j, previous);
+          if stride == 2 { members.set(j + 1, members.get(j - 1)); }
+          j = j - stride;
+        }
+        members.set(j, member);
+        if stride == 2 { members.set(j + 1, field_type); }
+        i = i + stride;
+      }
     }
 
     fn ty_simple(kind: Int): Int {
