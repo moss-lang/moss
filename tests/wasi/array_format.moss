@@ -1,0 +1,28 @@
+assume Std {
+  val first: Int;
+}
+
+assume Std, first {
+  fn run() {
+    let squares = array::tabulate[Item=Float, array::element=(k) => float(k * k)](first, 3);
+    for x in squares { println(format_float(x)); }
+
+    let zeros = array::filled[Item=Float](0.size(), 0.0);
+    for x in zeros { println(format_float(x)); }
+
+    println(format_float(0.0));
+    println(format_float(1e-10));
+    println(format_float(-1e-10));
+    println(format_float(999999999.9));
+    println(format_float(1.0 / 0.0));
+    println(format_float(-1.0 / 0.0));
+    println(format_float(0.0 / 0.0));
+  }
+}
+
+assume ReferenceBase {
+  fn main() {
+    bind StdBase;
+    run[first=2]();
+  }
+}

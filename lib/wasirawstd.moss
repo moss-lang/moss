@@ -1,11 +1,11 @@
 import "./bool.moss" use Bool;
 import "./num.moss" use .not, .and, .or, .xor;
-import "./std.moss" use Std;
+import "./std.moss" use Std, abort;
 import "./wasibyte.moss" use WasiByteConsts;
 import "./wasichar.moss" use WasiCharConsts;
 import "./wasistd.moss" use WasiBasics, WasiContainers, WasiOutput, WasiFiles,
   WasiFloats, Branch, GcArrays;
-import "./wasm.moss" use Wasm, Gc, ArrayRef;
+import "./wasm.moss" use Wasm, Gc, ArrayRef, unreachable;
 import "./array.moss" as array use ArrayHandle, Arrays;
 import "./size.moss" as size use Size, .size, .int;
 import "./int.moss" use Int;
@@ -18,6 +18,7 @@ functor WasiRawStd: Wasm, Gc, WasiCore, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;
+  bind abort = unreachable;
   bind WasiFiles;
   bind WasiFloats;
   # Lengths and indices are the root `Int`, a generation of their own

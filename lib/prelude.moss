@@ -22,3 +22,6 @@ import "./string.moss" use String, StringBuilder, StringLiterals,
   string_begin, string_write1, string_write2, string_write3, string_write4, string_finish, first_arg, print, println, arg_count, arg_at,
   .concat, .slice;
 import "./strlist.moss" use StrList, str_list;
+import "./array.moss" use Array, Item;
+import "./arrays.moss" as array;
+import "./format.moss" use format_float;

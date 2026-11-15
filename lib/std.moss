@@ -26,6 +26,9 @@ assume IntList {
   fn put_bytes(buf: IntList);
 }
 
+# End execution on an invalid operation.
+fn abort(): |;
+
 # The shared accessors of access.moss carry the element type per receiver
 # (D61): `Elem` is one symbol, applied here once per provision, so the
 # substitutions never meet.
@@ -40,6 +43,7 @@ context Std =
   ByteTypes,
   Bytes,
   putchar,
+  abort,
 
   Int,
   zero,

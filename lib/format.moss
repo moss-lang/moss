@@ -1,0 +1,67 @@
+import "./access.moss" use .length;
+import "./byte.moss" as byte;
+import "./float.moss" use Float, .round;
+import "./int.moss" use Int;
+import "./std.moss" use Std;
+import "./string.moss" use String, .concat, .slice, string_begin, string_write1, string_finish;
+
+assume Std {
+  fn digit(n: Int): String { "0123456789".slice(n, 1) }
+
+  fn unsigned_decimal(n: Int): String {
+    if n < 10 { digit(n) }
+    else { unsigned_decimal(n / 10).concat(digit(n % 10)) }
+  }
+
+  fn signed_decimal(n: Int): String {
+    if n >= 0 { unsigned_decimal(n) } else { "-".concat(unsigned_decimal(-n)) }
+  }
+
+  fn zeros(n: Int): String {
+    if n <= 0 { "" } else { "0".concat(zeros(n - 1)) }
+  }
+
+  fn with_point(digits: String, point: Int): String {
+    let n = digits.length();
+    if point <= 0 {
+      "0.".concat(zeros(-point)).concat(digits)
+    } else if point >= n {
+      digits.concat(zeros(point - n))
+    } else {
+      digits.slice(0, point).concat(".").concat(digits.slice(point, n - point))
+    }
+  }
+
+  # Human-readable decimal output with nine significant digits, using the
+  # current Float arithmetic and rounding. Small and large magnitudes use
+  # scientific notation. Either signed zero is rendered as "0".
+  fn format_float(value: Float): String {
+    if value != value { return "nan"; }
+    if value == 0.0 { return "0"; }
+    if value < 0.0 { return "-".concat(format_float(-value)); }
+    if value - value != 0.0 { return "inf"; }
+
+    var normalized = value;
+    var exponent = 0;
+    while normalized >= 10.0 {
+      normalized = normalized / 10.0;
+      exponent = exponent + 1;
+    }
+    while normalized < 1.0 {
+      normalized = normalized * 10.0;
+      exponent = exponent - 1;
+    }
+
+    var coefficient = (normalized * 100000000.0).round();
+    if coefficient == 1000000000 {
+      coefficient = 100000000;
+      exponent = exponent + 1;
+    }
+    while coefficient % 10 == 0 { coefficient = coefficient / 10; }
+    let digits = unsigned_decimal(coefficient);
+    if exponent >= -4 {
+      if exponent < 9 { return with_point(digits, exponent + 1); }
+    }
+    with_point(digits, 1).concat("e").concat(signed_decimal(exponent))
+  }
+}

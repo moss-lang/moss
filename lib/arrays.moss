@@ -1,0 +1,36 @@
+import "./access.moss" use .set;
+import "./array.moss" use Item, Array, .arrayed;
+import "./int.moss" use Int;
+import "./size.moss" use Size, .size, .int;
+import "./std.moss" use Std, abort;
+
+assume Int, Item {
+  fn element(index: Int): Item;
+}
+
+assume Std, Item {
+  fn filled(length: Size, value: Item): Array[Item=Item] {
+    value.arrayed(length)
+  }
+
+  assume element {
+    # Evaluate element once per index in the nonempty, inclusive range.
+    # Abort before calling element if the length cannot be used by an array.
+    fn tabulate(first: Int, last: Int): Array[Item=Item] {
+      if last < first { return abort(); }
+      let length = last - first + 1;
+      if length <= 0 { return abort(); }
+      if first + (length - 1) != last { return abort(); }
+      let size = length.size();
+      if size.int() != length { return abort(); }
+
+      let result = element(first).arrayed(size);
+      var offset = 1;
+      while offset < length {
+        result.set(offset.size(), element(first + offset));
+        offset = offset + 1;
+      }
+      result
+    }
+  }
+}
