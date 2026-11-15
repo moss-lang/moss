@@ -63,6 +63,16 @@ type Token =
   | Integer
   | Decimal
   | Underscore
+  | PlusEqual
+  | HyphenEqual
+  | StarEqual
+  | SlashEqual
+  | PercentEqual
+  | AmpersandEqual
+  | PipeEqual
+  | CaretEqual
+  | LessLessEqual
+  | GreaterGreaterEqual
 ;
 
 assume Std {
@@ -184,25 +194,26 @@ assume Std {
         if raw_line_start(mark.read()) { raw_string_token() }
         else { greater_token() }
       } else if c == char::percent {
-        Percent
+        two(char::equal, PercentEqual, Percent)
       } else if c == char::ampersand {
-        Ampersand
+        two(char::equal, AmpersandEqual, Ampersand)
       } else if c == char::lparen {
         LParen
       } else if c == char::rparen {
         RParen
       } else if c == char::star {
-        Star
+        two(char::equal, StarEqual, Star)
       } else if c == char::plus {
-        Plus
+        two(char::equal, PlusEqual, Plus)
       } else if c == char::comma {
         Comma
       } else if c == char::hyphen {
-        two(char::greater, HyphenGreater, Hyphen)
+        if take(char::greater) { HyphenGreater }
+        else { two(char::equal, HyphenEqual, Hyphen) }
       } else if c == char::dot {
         Dot
       } else if c == char::slash {
-        Slash
+        two(char::equal, SlashEqual, Slash)
       } else if c == char::semi {
         Semi
       } else if c == char::lbracket {
@@ -210,11 +221,11 @@ assume Std {
       } else if c == char::rbracket {
         RBracket
       } else if c == char::caret {
-        Caret
+        two(char::equal, CaretEqual, Caret)
       } else if c == char::lbrace {
         LBrace
       } else if c == char::pipe {
-        Pipe
+        two(char::equal, PipeEqual, Pipe)
       } else if c == char::rbrace {
         RBrace
       } else if c == char::quote {
@@ -248,7 +259,7 @@ assume Std {
 
     fn less_token(): Token {
       if take(char::less) {
-        LessLess
+        two(char::equal, LessLessEqual, LessLess)
       } else if take(char::equal) {
         LessEqual
       } else {
@@ -258,7 +269,7 @@ assume Std {
 
     fn greater_token(): Token {
       if take(char::greater) {
-        GreaterGreater
+        two(char::equal, GreaterGreaterEqual, GreaterGreater)
       } else if take(char::equal) {
         GreaterEqual
       } else {

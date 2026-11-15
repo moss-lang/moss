@@ -333,6 +333,12 @@ Definition prepend_statements (ss : checked (list astmt)) (b : block_parts) : bl
 Definition statement (s : checked astmt) : checked (list astmt) :=
   check_map (fun s => [s]) s.
 
+(* Compound assignment reads the current local through the ordinary
+   binary expression, before evaluating the right operand. *)
+Definition compound_assignment (n : token) (op : string) (e : form) : checked (list astmt) :=
+  let name := tx n in
+  statement (check_map (fun rhs => ASAssign name (AEBinary op (AEPath [name] None) rhs)) (as_expr e)).
+
 Definition end_block_expr (e : form) (next : option block_parts) : block_parts :=
   match next with
   | None => (Checked [], Some e)

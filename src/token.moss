@@ -37,6 +37,18 @@ tag GreaterEqual;
 tag GreaterGreater;
 tag HyphenGreater;
 
+# Compound assignments.
+tag PlusEqual;
+tag HyphenEqual;
+tag StarEqual;
+tag SlashEqual;
+tag PercentEqual;
+tag AmpersandEqual;
+tag PipeEqual;
+tag CaretEqual;
+tag LessLessEqual;
+tag GreaterGreaterEqual;
+
 # Keywords.
 tag As;
 tag Assume;

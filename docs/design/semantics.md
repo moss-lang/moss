@@ -843,6 +843,12 @@ return e?;      # early return; `return` alone returns ()
 break;          # loops only; carries no value
 ```
 
+A compound assignment `x op= e;` expands to `x = x op (e);` for
+`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`.
+It reads the mutable local before evaluating the right operand and uses the
+ordinary contextual operator. These are single tokens, so write `: | =`
+with a space when assigning a value with a bare uninhabited type annotation.
+
 `for` is out of the MVP entirely — designing an iteration protocol is
 deferred with it ([D35]). Both `while` and `loop` stay; each is trivial once
 the other exists.

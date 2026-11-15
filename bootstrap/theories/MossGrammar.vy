@@ -14,6 +14,8 @@ Local Open Scope string_scope.
 %token <Syntax.token> DOT SLASH COLON SEMI LESS EQUAL GREATER LBRACKET RBRACKET CARET LBRACE PIPE RBRACE
 %token <Syntax.token> EXCLAM_EQUAL COLON_COLON EQUAL_GREATER LESS_LESS LESS_EQUAL
 %token <Syntax.token> EQUAL_EQUAL GREATER_EQUAL GREATER_GREATER HYPHEN_GREATER EOF
+%token <Syntax.token> PLUS_EQUAL HYPHEN_EQUAL STAR_EQUAL SLASH_EQUAL PERCENT_EQUAL
+%token <Syntax.token> AMPERSAND_EQUAL PIPE_EQUAL CARET_EQUAL LESS_LESS_EQUAL GREATER_GREATER_EQUAL
 %token PADDING
 
 %start <checked afile> file
@@ -52,6 +54,7 @@ Local Open Scope string_scope.
 %type <MossActions.operators> operator_tail(full_primary,open_unary)
 %type <MossActions.operators> operator_tail(restricted_primary,fenced_open_unary)
 %type <Syntax.token> binop unop
+%type <string> compound_op
 %type <form> closed_unary(full_primary) closed_unary(restricted_primary) naked_path
 %type <form> safe_unary(full_primary) safe_unary(restricted_primary)
 %type <form> safe_atom(full_primary) safe_atom(restricted_primary) safe_atom(nonblock_primary)
@@ -553,10 +556,23 @@ free_lambda_body:
 | t = RETURN rest = free_lambda_body { map_free_expr (fun e => return_form t (Some e)) rest }
 | rest = free_operand { rest }
 
+compound_op:
+| PLUS_EQUAL { "+" }
+| HYPHEN_EQUAL { "-" }
+| STAR_EQUAL { "*" }
+| SLASH_EQUAL { "/" }
+| PERCENT_EQUAL { "%" }
+| AMPERSAND_EQUAL { "&" }
+| PIPE_EQUAL { "|" }
+| CARET_EQUAL { "^" }
+| LESS_LESS_EQUAL { "<<" }
+| GREATER_GREATER_EQUAL { ">>" }
+
 statement:
 | LET b = bind_target t = EQUAL e = expr SEMI { destructuring_stmt false b (Syntax.toff t) e }
 | VAR b = bind_target t = EQUAL e = expr SEMI { destructuring_stmt true b (Syntax.toff t) e }
 | n = NAME EQUAL e = expr SEMI { statement (check_map (ASAssign (Syntax.tx n)) (as_expr e)) }
+| n = NAME op = compound_op e = expr SEMI { compound_assignment n op e }
 | b = bind { statement (check_map ASBind b) }
 | WHILE e = condition b = block
   { statement (let! e := as_expr e in check_map (ASWhile e) b) }
@@ -686,6 +702,16 @@ Definition of_token (t : Syntax.token) : token :=
   | Syntax.GREATER_GREATER => GREATER_GREATER t
   | Syntax.HYPHEN_GREATER => HYPHEN_GREATER t
   | Syntax.EOF => EOF t
+  | Syntax.PLUS_EQUAL => PLUS_EQUAL t
+  | Syntax.HYPHEN_EQUAL => HYPHEN_EQUAL t
+  | Syntax.STAR_EQUAL => STAR_EQUAL t
+  | Syntax.SLASH_EQUAL => SLASH_EQUAL t
+  | Syntax.PERCENT_EQUAL => PERCENT_EQUAL t
+  | Syntax.AMPERSAND_EQUAL => AMPERSAND_EQUAL t
+  | Syntax.PIPE_EQUAL => PIPE_EQUAL t
+  | Syntax.CARET_EQUAL => CARET_EQUAL t
+  | Syntax.LESS_LESS_EQUAL => LESS_LESS_EQUAL t
+  | Syntax.GREATER_GREATER_EQUAL => GREATER_GREATER_EQUAL t
   end.
 
 Definition source_token (t : token) : Syntax.token :=
@@ -705,6 +731,16 @@ Definition source_token (t : token) : Syntax.token :=
   | LBRACE source | PIPE source | RBRACE source | EXCLAM_EQUAL source
   | COLON_COLON source | EQUAL_GREATER source | LESS_LESS source | LESS_EQUAL source
   | EQUAL_EQUAL source | GREATER_EQUAL source | GREATER_GREATER source | HYPHEN_GREATER source
+  | PLUS_EQUAL source
+  | HYPHEN_EQUAL source
+  | STAR_EQUAL source
+  | SLASH_EQUAL source
+  | PERCENT_EQUAL source
+  | AMPERSAND_EQUAL source
+  | PIPE_EQUAL source
+  | CARET_EQUAL source
+  | LESS_LESS_EQUAL source
+  | GREATER_GREATER_EQUAL source
   | EOF source
   => source
   | PADDING _ => Syntax.eof_tok

@@ -1,0 +1,53 @@
+import "../../lib/base.moss" use ReferenceBase;
+
+assume Std {
+  fn show(n: Int) { println(format_float(float(n))); }
+
+  fn run() {
+    var x = 10;
+    x += 2;
+    show(x);
+    x -= 5;
+    show(x);
+    x *= 4;
+    show(x);
+    x /= 3;
+    show(x);
+    x %= 5;
+    show(x);
+    x |= 2;
+    show(x);
+    x &= 3;
+    show(x);
+    x ^= 3;
+    show(x);
+    x <<= 6;
+    show(x);
+    x >>= 2;
+    show(x);
+
+    {
+      let step = 5;
+      bind Int.add = (rhs) => this - rhs;
+      x += step;
+    }
+    show(x);
+
+    # The left operand is read first, and the right operand runs once.
+    var calls = 0;
+    x += { calls += 1; x = 100; 4 };
+    show(x);
+    show(calls);
+
+    # The whole right operand is the multiplier.
+    x *= 1 + 2;
+    show(x);
+  }
+}
+
+assume ReferenceBase {
+  fn main() {
+    bind StdBase;
+    run();
+  }
+}

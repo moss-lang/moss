@@ -118,7 +118,11 @@ Definition lex_char (c : byte) (r : list byte) (i : nat) (acc : list token)
   else
   match (match r with d :: r' => match two_char c d with Some k => Some (k, d, r') | None => None end
                       | [] => None end) with
-  | Some (k, d, r') => inl (r', S (S i), Tok k (string_of_list_byte [c; d]) i :: acc)
+  | Some (k, d, r') =>
+      match symbol_suffix k r' with
+      | Some (k', e, r'') => inl (r'', S (S (S i)), Tok k' (string_of_list_byte [c; d; e]) i :: acc)
+      | None => inl (r', S (S i), Tok k (string_of_list_byte [c; d]) i :: acc)
+      end
   | None =>
   match one_char c with
   | Some k => inl (r, S i, Tok k (string_of_list_byte [c]) i :: acc)
@@ -193,6 +197,16 @@ Definition kind_name (k : token_kind) : string :=
   | LESS_EQUAL => "LESS_EQUAL" | EQUAL_EQUAL => "EQUAL_EQUAL"
   | GREATER_EQUAL => "GREATER_EQUAL" | GREATER_GREATER => "GREATER_GREATER"
   | HYPHEN_GREATER => "HYPHEN_GREATER" | EOF => "EOF"
+  | PLUS_EQUAL => "PLUS_EQUAL"
+  | HYPHEN_EQUAL => "HYPHEN_EQUAL"
+  | STAR_EQUAL => "STAR_EQUAL"
+  | SLASH_EQUAL => "SLASH_EQUAL"
+  | PERCENT_EQUAL => "PERCENT_EQUAL"
+  | AMPERSAND_EQUAL => "AMPERSAND_EQUAL"
+  | PIPE_EQUAL => "PIPE_EQUAL"
+  | CARET_EQUAL => "CARET_EQUAL"
+  | LESS_LESS_EQUAL => "LESS_LESS_EQUAL"
+  | GREATER_GREATER_EQUAL => "GREATER_GREATER_EQUAL"
   end.
 (* Menhir's bound is logarithmic in the number of automaton steps.
    GrammarBound proves that this gives enough steps for every file tree. *)

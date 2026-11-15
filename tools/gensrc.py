@@ -220,7 +220,7 @@ import "./token.moss" use *;
 
 # Token kinds as Ints.
 #
-# `Token` is a union of sixty units, which is the right type for the
+# `Token` is a union of unit tags, which is the right type for the
 # lexer to return and the wrong one for a recursive-descent parser to
 # carry: a parser compares the current token against a handful of
 # expected ones per production, and a match arm per comparison is

@@ -4,7 +4,7 @@ import "./token.moss" use *;
 
 # Token kinds as Ints.
 #
-# `Token` is a union of sixty units, which is the right type for the
+# `Token` is a union of unit tags, which is the right type for the
 # lexer to return and the wrong one for a recursive-descent parser to
 # carry: a parser compares the current token against a handful of
 # expected ones per production, and a match arm per comparison is
@@ -76,6 +76,16 @@ assume Std {
   fn tk_integer(): Int { 59 }
   fn tk_decimal(): Int { 60 }
   fn tk_underscore(): Int { 61 }
+  fn tk_plus_equal(): Int { 62 }
+  fn tk_hyphen_equal(): Int { 63 }
+  fn tk_star_equal(): Int { 64 }
+  fn tk_slash_equal(): Int { 65 }
+  fn tk_percent_equal(): Int { 66 }
+  fn tk_ampersand_equal(): Int { 67 }
+  fn tk_pipe_equal(): Int { 68 }
+  fn tk_caret_equal(): Int { 69 }
+  fn tk_less_less_equal(): Int { 70 }
+  fn tk_greater_greater_equal(): Int { 71 }
 
   fn token_code(t: Token): Int {
     match t {
@@ -141,6 +151,16 @@ assume Std {
       Integer => tk_integer(),
       Decimal => tk_decimal(),
       Underscore => tk_underscore(),
+      PlusEqual => tk_plus_equal(),
+      HyphenEqual => tk_hyphen_equal(),
+      StarEqual => tk_star_equal(),
+      SlashEqual => tk_slash_equal(),
+      PercentEqual => tk_percent_equal(),
+      AmpersandEqual => tk_ampersand_equal(),
+      PipeEqual => tk_pipe_equal(),
+      CaretEqual => tk_caret_equal(),
+      LessLessEqual => tk_less_less_equal(),
+      GreaterGreaterEqual => tk_greater_greater_equal(),
     }
   }
 }

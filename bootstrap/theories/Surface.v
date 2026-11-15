@@ -169,7 +169,9 @@ Inductive token_kind :=
 | CARET | LBRACE | PIPE | RBRACE
 | EXCLAM_EQUAL | COLON_COLON | EQUAL_GREATER | LESS_LESS | LESS_EQUAL
 | EQUAL_EQUAL | GREATER_EQUAL | GREATER_GREATER | HYPHEN_GREATER
-| EOF.
+| EOF
+| PLUS_EQUAL | HYPHEN_EQUAL | STAR_EQUAL | SLASH_EQUAL | PERCENT_EQUAL
+| AMPERSAND_EQUAL | PIPE_EQUAL | CARET_EQUAL | LESS_LESS_EQUAL | GREATER_GREATER_EQUAL.
 
 (* Kinds are compared by their position in the list above. *)
 Definition token_kind_index (k : token_kind) : nat :=
@@ -189,6 +191,16 @@ Definition token_kind_index (k : token_kind) : nat :=
   | LESS_EQUAL => 55 | EQUAL_EQUAL => 56 | GREATER_EQUAL => 57
   | GREATER_GREATER => 58 | HYPHEN_GREATER => 59
   | EOF => 60
+  | PLUS_EQUAL => 61
+  | HYPHEN_EQUAL => 62
+  | STAR_EQUAL => 63
+  | SLASH_EQUAL => 64
+  | PERCENT_EQUAL => 65
+  | AMPERSAND_EQUAL => 66
+  | PIPE_EQUAL => 67
+  | CARET_EQUAL => 68
+  | LESS_LESS_EQUAL => 69
+  | GREATER_GREATER_EQUAL => 70
   end.
 Definition token_kind_eqb (a b : token_kind) : bool :=
   Nat.eqb (token_kind_index a) (token_kind_index b).
@@ -222,7 +234,7 @@ Definition KEYWORDS : list (string * token_kind) :=
 Fixpoint assoc {B : Type} (k : string) (l : list (string * B)) : option B :=
   match l with [] => None | (a, b) :: r => if String.eqb a k then Some b else assoc k r end.
 
-(* The symbols: one character, and two (the longer always wins). *)
+(* The symbols: up to three characters (the longer always wins). *)
 Definition one_char (b : byte) : option token_kind :=
   match b with
   | "!"%byte => Some EXCLAM | "%"%byte => Some PERCENT | "&"%byte => Some AMPERSAND
@@ -243,6 +255,24 @@ Definition two_char (a b : byte) : option token_kind :=
   | "<"%byte, "="%byte => Some LESS_EQUAL | "="%byte, "="%byte => Some EQUAL_EQUAL
   | ">"%byte, "="%byte => Some GREATER_EQUAL | ">"%byte, ">"%byte => Some GREATER_GREATER
   | "-"%byte, ">"%byte => Some HYPHEN_GREATER
+  | "+"%byte, "="%byte => Some PLUS_EQUAL
+  | "-"%byte, "="%byte => Some HYPHEN_EQUAL
+  | "*"%byte, "="%byte => Some STAR_EQUAL
+  | "/"%byte, "="%byte => Some SLASH_EQUAL
+  | "%"%byte, "="%byte => Some PERCENT_EQUAL
+  | "&"%byte, "="%byte => Some AMPERSAND_EQUAL
+  | "|"%byte, "="%byte => Some PIPE_EQUAL
+  | "^"%byte, "="%byte => Some CARET_EQUAL
+  | _, _ => None
+  end.
+
+(* After a shift token, an immediately following equals forms its
+   compound assignment token. *)
+Definition symbol_suffix (k : token_kind) (rest : list byte)
+    : option (token_kind * byte * list byte) :=
+  match k, rest with
+  | LESS_LESS, "="%byte :: r => Some (LESS_LESS_EQUAL, "="%byte, r)
+  | GREATER_GREATER, "="%byte :: r => Some (GREATER_GREATER_EQUAL, "="%byte, r)
   | _, _ => None
   end.
 
@@ -281,7 +311,10 @@ Definition Exponent (ex : list byte) : Prop :=
 (* `Lexeme cs k rest`: the bytes `cs` are one token of kind `k` when `rest`
    follows; the conditions on `rest` make it the longest token there. *)
 Inductive Lexeme : list byte -> token_kind -> list byte -> Prop :=
-| LxSym2 : forall a b k rest, two_char a b = Some k -> Lexeme [a; b] k rest
+| LxSym3 : forall a b c short k rest, two_char a b = Some short ->
+    symbol_suffix short (c :: rest) = Some (k, c, rest) -> Lexeme [a; b; c] k rest
+| LxSym2 : forall a b k rest, two_char a b = Some k ->
+    symbol_suffix k rest = None -> Lexeme [a; b] k rest
 | LxSym1 : forall a k rest, one_char a = Some k ->
     (forall b r, rest = b :: r -> two_char a b = None) -> Lexeme [a] k rest
 (* a name or keyword (`in` is a keyword, of `for`) *)

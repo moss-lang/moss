@@ -22,7 +22,9 @@ Proof.
      LPAREN; RPAREN; STAR; PLUS; COMMA; HYPHEN; DOT; SLASH; COLON; SEMI; LESS;
      EQUAL; GREATER; LBRACKET; RBRACKET; CARET; LBRACE; PIPE; RBRACE;
      EXCLAM_EQUAL; COLON_COLON; EQUAL_GREATER; LESS_LESS; LESS_EQUAL;
-     EQUAL_EQUAL; GREATER_EQUAL; GREATER_GREATER; HYPHEN_GREATER; EOF]).
+     EQUAL_EQUAL; GREATER_EQUAL; GREATER_GREATER; HYPHEN_GREATER; EOF;
+     PLUS_EQUAL; HYPHEN_EQUAL; STAR_EQUAL; SLASH_EQUAL; PERCENT_EQUAL;
+     AMPERSAND_EQUAL; PIPE_EQUAL; CARET_EQUAL; LESS_LESS_EQUAL; GREATER_GREATER_EQUAL]).
   assert (R : forall k, nth (token_kind_index k) all EOF = k) by (destruct k; reflexivity).
   intro H. rewrite <- (R a), <- (R b), H. reflexivity.
 Qed.
@@ -207,6 +209,13 @@ Definition LexStep (i : nat) (cs : list byte) (acc : list token) (r' : list byte
   (acc' = acc /\ forall T, Lexes i' r' T -> Lexes i cs T) \/
   (exists t, acc' = t :: acc /\ forall T, Lexes i' r' T -> Lexes i cs (t :: T)).
 
+Lemma symbol_suffix_split k cs t c rest :
+  symbol_suffix k cs = Some (t, c, rest) -> cs = c :: rest.
+Proof.
+  destruct k; destruct cs as [|d r]; simpl; try discriminate;
+    destruct d; try discriminate; congruence.
+Qed.
+
 Lemma lex_char_sound c r i acc r' i' acc' : lex_char c r i acc = inl (r', i', acc') ->
   LexStep i (c :: r) acc r' i' acc'.
 Proof.
@@ -220,8 +229,12 @@ Proof.
     intros. apply LexComment; auto. }
   destruct r as [|d r0] eqn:Er.
   2: destruct (two_char c d) as [k|] eqn:E2.
-  2: { injection H as <- <- <-. right. eexists. split; [reflexivity|]. intros T HT.
-       eapply lex_tok; [apply LxSym2; eauto | exact HT | reflexivity | simpl; lia]. }
+  2: { destruct (symbol_suffix k r0) as [[[long e] r1]|] eqn:Ext.
+       - pose proof (symbol_suffix_split _ _ _ _ _ Ext) as ->.
+         injection H as <- <- <-. right. eexists. split; [reflexivity|]. intros T HT.
+         eapply lex_tok; [eapply LxSym3; eauto | exact HT | reflexivity | simpl; lia].
+       - injection H as <- <- <-. right. eexists. split; [reflexivity|]. intros T HT.
+         eapply lex_tok; [apply LxSym2; eauto | exact HT | reflexivity | simpl; lia]. }
   all: destruct (one_char c) as [k|] eqn:E1.
   1, 3: injection H as <- <- <-; right; eexists; split; [reflexivity|]; intros T HT;
         (eapply lex_tok; [apply LxSym1; [exact E1|] | exact HT | reflexivity | simpl; lia]);
@@ -394,12 +407,16 @@ Lemma lexeme_char cs k r i acc : Lexeme cs k r ->
   exists c rest0, (cs ++ r)%list = c :: rest0 /\
     lex_char c rest0 i acc = inl (r, i + length cs, Tok k (string_of_list_byte cs) i :: acc).
 Proof.
-  intro H. destruct H as [a b k rest Hk | a k rest Hk Hn | c ns rest Hc Hns Hr | body rest Hb
+  intro H. destruct H as [a b c short k rest Hk Ext | a b k rest Hk Ext | a k rest Hk Hn | c ns rest Hc Hns Hr | body rest Hb
                          | d ds frac ex rest Hd Hf He Hr Hdot].
+  - exists a, (b :: c :: rest). split; [reflexivity|].
+    destruct (two_char_first _ _ _ Hk) as (H1 & H2 & _). unfold lex_char. rewrite H1.
+    destruct (Byte.eqb a "#"%byte) eqn:E; [apply Byte.byte_dec_bl in E; contradiction|].
+    rewrite Hk, Ext. fin_off.
   - exists a, (b :: rest). split; [reflexivity|].
     destruct (two_char_first _ _ _ Hk) as (H1 & H2 & _). unfold lex_char. rewrite H1.
     destruct (Byte.eqb a "#"%byte) eqn:E; [apply Byte.byte_dec_bl in E; contradiction|].
-    rewrite Hk. fin_off.
+    rewrite Hk, Ext. fin_off.
   - exists a, rest. split; [reflexivity|].
     destruct (one_char_first _ _ Hk) as (H1 & H2 & _). unfold lex_char. rewrite H1.
     destruct (Byte.eqb a "#"%byte) eqn:E; [apply Byte.byte_dec_bl in E; contradiction|].
