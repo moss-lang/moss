@@ -144,8 +144,8 @@ Proof.
       |F C exp path s NotLocal Resolve Kind
       |F C exp path s d n ann t NotLocal Resolve Decl Ast Present
       |F C exp path s d n ann source t code NotLocal Resolve Decl Ast Assumes AnnotationTyped Initializer
-      |F C exp path brackets args s readings arguments payload_type source value actual
-         Resolve Kind Brackets Readings Payload ArgList Child Fits
+      |F C exp path brackets args s app readings arguments payload_type source value actual
+         Resolve Kind Application Brackets Readings Payload ArgList Child Fits
       |F C exp path args f formal needs arguments signature values demands result
          Resolve Kind SourceBody Context Demand Needs Theta Signature Args InForce
       |F C exp path args f signature values Resolve Kind Abstract Provision Args

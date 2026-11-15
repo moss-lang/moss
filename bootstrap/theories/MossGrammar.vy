@@ -24,6 +24,9 @@ Local Open Scope string_scope.
 %type <ause> use_item
 %type <nat * path> path
 %type <reference> type_ref
+%type <expr_reference> expression_ref
+%type <list (checked (spec * option aexpr))> call_bindings
+%type <option (list (checked (spec * option aexpr)))> maybe(call_bindings)
 %type <list (path * spec)> app
 %type <path * spec> app_binding
 %type <spec> spec
@@ -70,7 +73,7 @@ Local Open Scope string_scope.
 %type <block_parts> free_bare_block
 %type <free_tail> free_after_value
 %type <Syntax.token -> path -> free_tail> free_after_member
-%type <reference -> free_operand> free_after_ref
+%type <expr_reference -> free_operand> free_after_ref
 %type <free_operand> free_operand free_lambda_body
 %type <checked (list astmt)> statement
 %type <checked (list (spec * option aexpr))> bind
@@ -151,6 +154,12 @@ dot_alias:
 path:
 | n = NAME { (Syntax.toff n, [Syntax.tx n]) }
 | n = NAME COLON_COLON p = path { (Syntax.toff n, Syntax.tx n :: snd p) }
+
+expression_ref:
+| p = path bs = maybe(call_bindings) { ExprRef (fst p) (snd p) bs }
+
+call_bindings:
+| LBRACKET bs = items(bind_item) RBRACKET { bs }
 
 type_ref:
 | p = path a = maybe(app) { Ref (fst p) (snd p) a }
@@ -304,7 +313,7 @@ closed_unary(P):
 | e = naked_path { e }
 
 naked_path:
-| r = type_ref { reference_form r }
+| r = expression_ref { expr_reference_form r }
 | op = unop e = naked_path { unary_form op e }
 
 safe_unary(P):
@@ -313,8 +322,8 @@ safe_unary(P):
 
 safe_atom(P):
 | e = P ss = many(suffix) { postfix e ss }
-| r = type_ref a = arguments ss = many(suffix) { postfix (call_form r a) ss }
-| r = type_ref s = suffix ss = many(suffix) { postfix (reference_form r) (s :: ss) }
+| r = expression_ref a = arguments ss = many(suffix) { postfix (expr_call_form r a) ss }
+| r = expression_ref s = suffix ss = many(suffix) { postfix (expr_reference_form r) (s :: ss) }
 | h = lambda_head e = closed_expr ss = many(suffix) { postfix (lambda_form h e) ss }
 
 open_unary:
@@ -380,8 +389,8 @@ restricted_primary:
 | t = STRING { string_form t }
 
 path_primary:
-| r = type_ref a = maybe(arguments)
-  { match a with None => reference_form r | Some a => call_form r a end }
+| r = expression_ref a = maybe(arguments)
+  { match a with None => expr_reference_form r | Some a => expr_call_form r a end }
 
 nonblock_primary:
 | e = restricted_primary { e }
@@ -389,7 +398,7 @@ nonblock_primary:
 | e = bare_record { e }
 
 named_record:
-| r = type_ref LBRACE fs = items(record_field) RBRACE { record_form (ref_offset r) (Some r) fs }
+| r = expression_ref LBRACE fs = items(record_field) RBRACE { expr_record_form r fs }
 
 bare_record:
 | t = LBRACE RBRACE { record_form (Syntax.toff t) None [] }
@@ -402,11 +411,11 @@ bare_record:
 | t = LBRACE f = annotated_short RBRACE { record_form (Syntax.toff t) None [f] }
 
 record_short:
-| r = type_ref { short_reference r None }
+| r = expression_ref { expr_short_reference r None }
 | f = annotated_short { f }
 
 annotated_short:
-| r = type_ref t = annotation { short_reference r (Some t) }
+| r = expression_ref t = annotation { expr_short_reference r (Some t) }
 
 annotated_path:
 | e = path_primary t = annotation { with_annotation e (fst t) (snd t) }
@@ -489,8 +498,8 @@ body_ops_no_brace:
   { fold_operators (postfix (literal_form t) ss) ops }
 | t = STRING ss = many(suffix) ops = operator_tail(full_primary, open_unary)
   { fold_operators (postfix (string_form t) ss) ops }
-| r = type_ref a = maybe(arguments) ss = many(suffix) ops = operator_tail(full_primary, open_unary)
-  { fold_operators (postfix (match a with None => reference_form r | Some a => call_form r a end) ss) ops }
+| r = expression_ref a = maybe(arguments) ss = many(suffix) ops = operator_tail(full_primary, open_unary)
+  { fold_operators (postfix (match a with None => expr_reference_form r | Some a => expr_call_form r a end) ss) ops }
 | e = named_record ss = many(suffix) ops = operator_tail(full_primary, open_unary)
   { fold_operators (postfix e ss) ops }
 | t = EXCLAM e = closed_unary(full_primary) ops = operator_tail(full_primary, open_unary)
@@ -521,18 +530,18 @@ free_after_member:
 
 free_operand:
 | op = unop rest = free_operand { map_free_operand (unary_form op) rest }
-| r = type_ref rest = free_after_ref { rest r }
+| r = expression_ref rest = free_after_ref { rest r }
 | e = free_primary rest = free_after_value { rest e }
 | h = lambda_head e = closed_expr rest = free_after_value { rest (lambda_form h e) }
 | h = lambda_head rest = free_lambda_body { map_free_expr (lambda_form h) rest }
 
 free_after_ref:
-| rest = free_end(body_no_brace) { fun r => free_finish rest (reference_form r) }
-| a = arguments rest = free_after_value { fun r => rest (call_form r a) }
+| rest = free_end(body_no_brace) { fun r => free_finish rest (expr_reference_form r) }
+| a = arguments rest = free_after_value { fun r => rest (expr_call_form r a) }
 | LBRACE fs = items(record_field) RBRACE rest = free_after_value
-  { fun r => rest (record_form (ref_offset r) (Some r) fs) }
-| d = DOT p = path rest = free_after_member { fun r => rest d (snd p) (reference_form r) }
-| op = binop rest = free_operand { fun r => free_binary op rest (reference_form r) }
+  { fun r => rest (expr_record_form r fs) }
+| d = DOT p = path rest = free_after_member { fun r => rest d (snd p) (expr_reference_form r) }
+| op = binop rest = free_operand { fun r => free_binary op rest (expr_reference_form r) }
 
 free_primary:
 | e = restricted_primary { e }

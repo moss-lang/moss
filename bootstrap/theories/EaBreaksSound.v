@@ -66,9 +66,15 @@ Proof.
                   injection Equal as <-; eauto using BkRec, BkBareRecord
                 |intro Break; inversion Break; subst; eexists (_, Some _); cbn; eauto]
         |apply any_break_sound; intros; apply optional_break_sound, Expr]].
-    + eapply break_answer_iff with (observed := exists arg, In arg args /\ Breaks W md arg).
-      * split; [intros [arg [Present Break]]; eapply BkCall; eassumption|intro Break; inversion Break; subst; eauto].
-      * apply any_break_sound. intros. apply Expr.
+    + eapply break_answer_iff with (observed :=
+        (exists arg, In arg args /\ Breaks W md arg) \/
+        (exists bs, brackets = Some bs /\ exists item, In item bs /\ ItemBreaks W md item)).
+      * split.
+        -- intros [[arg [Present Break]]|[bs [-> [item [Present Break]]]]];
+             eauto using BkCall, BkCallBind.
+        -- intro Break. inversion Break; subst; eauto 6.
+      * apply break_or_sound; [apply any_break_sound; intros; apply Expr|].
+        apply optional_break_sound. intros. apply any_break_sound; intros; apply Item.
     + eapply break_answer_iff with (observed := Breaks W md receiver);
         [split; [apply BkField|intro Break; now inversion Break]|apply Expr].
     + eapply break_answer_iff with

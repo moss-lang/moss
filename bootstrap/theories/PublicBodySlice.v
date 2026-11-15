@@ -796,8 +796,7 @@ Proof.
   - destruct Out as [_ [L _]]; congruence.
 Qed.
 
-(* D89: what can break in a bracketed call's expansion is one of its
-   arguments; the binds and the `%arg` paths cannot. *)
+(* A break in a bracket call occurs in an argument or binding item. *)
 Lemma call_block_breaks : forall md pa bs args,
   A.Breaks W md (Audit.Syntax.call_block pa bs args) -> A.Breaks W md (AECall pa (Some bs) args).
 Proof.
@@ -810,10 +809,7 @@ Proof.
       eapply A.BkCall; [eapply in_combine_r; exact InC|eassumption].
     + destruct InB as [Eq|[]]. subst.
       match goal with SB : A.StmtBreaks _ _ _ |- _ => inversion SB; subst end.
-      match goal with InI : In _ (map _ _) |- _ => apply in_map_iff in InI as [b0 [Eq _]] end.
-      subst. destruct b0 as [bp [[rp|] rk ra]]; cbn in *;
-        match goal with IB : A.ItemBreaks _ _ _ |- _ => inversion IB; subst end;
-        match goal with By : A.Breaks _ _ _ |- _ => inversion By end.
+      eapply A.BkCallBind; eassumption.
   - match goal with BT : A.Breaks _ _ (AECall _ _ _) |- _ => inversion BT; subst end.
     match goal with InY : In _ (map _ _) |- _ => apply in_map_iff in InY as [n0 [Eq _]] end.
     subst. match goal with By : A.Breaks _ _ (AEPath _ _) |- _ => inversion By end.
@@ -5728,7 +5724,7 @@ Proof.
       |F C exp pa s NotLocal R K
       |F C exp pa s dcl n t0 t NotLocal R Decl Ast Val
       |F C exp pa s dcl n t0 i t x NotLocal R Decl Ast NoAssume TyOf0 Init
-      |F C exp pa a args s bs xs pay y v vty R K Br F2 Pay Args1 Dy Fits
+      |F C exp pa a args s app bs xs pay y v vty R K App Br F2 Pay Args1 Dy Fits
       |F C exp pa args f Cf ns th sg xs wrap C' R K Def Ctx Dem Needs CT Sig Args RB
       |F C exp pa args f sg xs R K Abs Fn Args
       |F C exp pa bs args f x t R K Br Dx

@@ -67,6 +67,8 @@ Proof.
     Resolve Declared Tag before [value t] after Run.
   cbn [ex] in Run. fold W in Run. rewrite Resolve in Run. cbn [mbind ret] in Run.
   rewrite Declared in Run. cbn [mbind ret] in Run. rewrite Tag in Run.
+  apply mbind_ok in Run as (app & mid & Read & Run).
+  apply lift_result in Read as [Application <-].
   apply mbind_ok in Run as (rows & mid & Read & Run).
   apply pure_result in Read as [Rows <-].
   apply mbind_ok in Run as (arguments & mid & Read & Run).
@@ -85,7 +87,7 @@ Proof.
   destruct (Below _ _ _ _ _ _ _ Child) as [Backward Typed].
   split; [exact Backward|]. intros Valid Post.
   destruct (Typed Valid Post) as [Final Body]. split; [exact Final|].
-  eapply ExTag; [exact Resolve| |eapply brackets_sound; exact Rows|now apply tag_arguments_read|
+  eapply ExTag; [exact Resolve| |exact Application|eapply brackets_sound; exact Rows|now apply tag_arguments_read|
     eapply payload_of_sound; exact Payload|exact PayloadSyntax|exact Body|now apply fitsb_exact].
   intros [bare_name Bare]. unfold ast_of in Bare. fold W in Bare.
   rewrite Declared in Bare. cbn in Bare. rewrite Tag in Bare. discriminate.

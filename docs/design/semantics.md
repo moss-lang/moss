@@ -5202,32 +5202,30 @@ instantiates, such as an element-free constructor `fn stack(): Stack`
 under `assume Item`, could be called only as `{ bind Item = Float;
 stack() }`.
 
-Decided: `f[A=T, ...](e1, ..., en)` on a function `f` is sugar for
+Decided: the items in a function call's brackets are the items of an
+ordinary `bind`. For example, `f[A=T, input=read, limit=n](e1, ..., en)`
+expands to
 
-    { let a1 = e1; ...; let an = en; bind A = T, ...; f(a1, ..., an) }
+    { let a1 = e1; ...; let an = en; bind A = T, input = read, limit = n; f(a1, ..., an) }
 
 where `a1` to `an` are names no program can write. The arguments are
-evaluated before the binds, left to right ([D32]), in the caller's
-terms, so a bind cannot change what an argument means (the rule a
-family's on-demand application already follows, [D84] rule 7), and the
-binds end with the call. As on any reference ([D22]), each binding must
-name a requirement of `f`: a type symbol of its `assume` nesting,
-flattened through contexts. Naming anything else is an error; the
-requirements it does not name must be in force at the call and pass
-through. A binding binds a type to a type written by name, as `bind` does.
-Binding a val, fn or functor requirement this way is not supported.
-Method calls take no brackets (the grammar has none on a suffix), and a
-tag's application keeps its meaning. Both front ends expand the call as
-written: the self-hosted compiler rewrites it before the back end reads
-a body (`lower::desugar_call_brackets`), and the bootstrap elaborates
-`Audit.Syntax.call_block`, the expansion that the elaboration relation's
-`ExCallBr` reads. Since a bracket call is a bind and a call, a bracket
-that grows the callee's own instantiation (`nest[T=Wrap](...)` inside
-`nest`) is polymorphic recursion like any other, and [D16]'s
-expanding-cycle check (`NoExpandingCycle`) rejects it
-(`tests/errors/expand_call_brackets.moss`). Standing tests:
-`tests/wasi/call_brackets.moss` and
-`tests/wasi/call_brackets_unrequired.moss`.
+evaluated left to right ([D32]) before any bracket bindings. The binding
+items run in their written order. An earlier type binding can determine
+the signature and context captured by a later function or method binding.
+Value expressions run where their bind would run, and a bare functor item
+applies it. All the bindings end with the call. As on any reference
+([D22]), a bound type symbol must belong to the function's flattened
+assumptions.
+
+The two front ends parse the bracket items of an expression using the
+binding grammar. After resolving the head of a call, a function expands
+the items as a block and a tag interprets them as a type application.
+A type reference or a named record constructor also requires type
+applications. Method calls have no brackets on their suffix. A bracket
+call that grows the callee's own instantiation (`nest[T=Wrap](...)`
+inside `nest`) is subject to the same expanding-cycle check as an explicit
+block ([D16]). Standing tests include `tests/wasi/call_brackets.moss` and
+`tests/wasi/call_bindings.moss`.
 
 **[D90] DECIDED by the designer and implemented (type equations as context and assume items).**
 

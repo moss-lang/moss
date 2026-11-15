@@ -42,7 +42,7 @@ Inductive apat : Type :=
 Inductive aexpr : Type :=
 | AEUnit | AEThis
 | AEPath   : path -> sapp -> aexpr
-| AECall   : path -> sapp -> list aexpr -> aexpr
+| AECall   : path -> option (list (spec * option aexpr)) -> list aexpr -> aexpr
 | AEField  : aexpr -> name -> bool -> aexpr  (* true requires a bare product *)
 | AEMeth   : aexpr -> path -> list aexpr -> aexpr
 | AERec    : path -> sapp -> list (name * option aexpr) -> aexpr
@@ -556,15 +556,29 @@ Definition string_desugar (value : string) : aexpr :=
    `%` starts no name a program can write.  Elaboration reads the
    expansion (Elaboration.ExCallBr); a tag's application is not expanded. *)
 Definition call_arg_name (i : nat) : name := "%arg" ++ show_nat i.
-Definition call_block (p : path) (a : list (path * spec)) (args : list aexpr) : aexpr :=
+Definition call_block (p : path) (bindings : list (spec * option aexpr))
+    (args : list aexpr) : aexpr :=
   let names := map call_arg_name (seq 0 (List.length args)) in
   AEBlock (ABlock (List.app (map (fun na => ASLet (fst na) None (snd na)) (combine names args))
-                   [ASBind (map (fun b => (Spec (Some (fst b)) None None,
-                                           Some (match snd b with
-                                                 | Spec (Some rp) _ ra => AEPath rp ra
-                                                 | _ => AEUnit
-                                                 end))) a)])
+                   [ASBind bindings])
                   (Some (AECall p None (map (fun n => AEPath [n] None) names)))).
+
+Fixpoint type_bindings (bindings : list (spec * option aexpr)) : option (list (path * spec)) :=
+  match bindings with
+  | [] => Some []
+  | (Spec (Some lhs) None None, Some (AEPath rhs app)) :: rest =>
+      match type_bindings rest with
+      | Some more => Some ((lhs, Spec (Some rhs) None app) :: more)
+      | None => None
+      end
+  | _ => None
+  end.
+
+Definition type_application (bindings : option (list (spec * option aexpr))) : option sapp :=
+  match bindings with
+  | None => Some None
+  | Some bs => option_map (@Some _) (type_bindings bs)
+  end.
 
 (* D85: `for x in coll { body }` is
    `{ let for = coll; var while = for.begin();

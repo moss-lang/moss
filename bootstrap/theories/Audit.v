@@ -2955,6 +2955,8 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 Inductive Breaks (W : world) : string -> aexpr -> Prop :=
 | BkBreak : forall md,Breaks W md AEBreak
 | BkCall : forall md p a args y, In y args -> Breaks W md y -> Breaks W md (AECall p a args)
+| BkCallBind : forall md p bs args item, In item bs -> ItemBreaks W md item ->
+    Breaks W md (AECall p (Some bs) args)
 | BkField : forall md o n bare, Breaks W md o -> Breaks W md (AEField o n bare)
 | BkMethRecv : forall md o p args, Breaks W md o -> Breaks W md (AEMeth o p args)
 | BkMethArg : forall md o p args y, In y args -> Breaks W md y -> Breaks W md (AEMeth o p args)
@@ -3280,7 +3282,9 @@ Fixpoint free_names (e : aexpr) : list name :=
   | AEUnit | AEThis | AEBreak | AELit _ => []
   | AEPath [n] None => [n]
   | AEPath _ _ => []
-  | AECall _ _ args => flat_map free_names args
+  | AECall _ a args => flat_map free_names args ++
+      match a with None => [] | Some bs => flat_map (fun q => match snd q with
+        | Some e => free_names e | None => [] end) bs end
   | AEField receiver _ _ | AEUnary _ receiver => free_names receiver
   | AEMeth receiver _ args => free_names receiver ++ flat_map free_names args
   | AERec _ _ fields | AEBareRecord fields => flat_map (fun q => match snd q with
@@ -3372,12 +3376,16 @@ Fixpoint translate_demands (C : cx) (demands : list family_use) (body : expr) : 
         (translate_demands (family_restore C (demand_result d)) rest body)
   end.
 
-(* D89: the bracket application on a call of the fn f: each binding names
-   a type symbol among f's requirements and binds it to a type by name. *)
-Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * spec)) : Prop :=
-  Forall (fun b => (exists x, resolve_sym W p (fst b) = Some x /\ kind_sym W x = Some DKType /\
-                              In x (w_reqs W f)) /\
-                   exists rp ra, snd b = Spec (Some rp) None ra) bs.
+(* Only type bindings carry D89's relevance condition. Other items
+   use the ordinary binding rules in the expansion. *)
+Definition CallBrackets (W : world) (p : string) (f : nat)
+    (bs : list (spec * option aexpr)) : Prop :=
+  Forall (fun b => match fst b with
+    | Spec (Some lhs) None _ =>
+        forall x, resolve_sym W p lhs = Some x -> kind_sym W x = Some DKType ->
+          In x (w_reqs W f)
+    | _ => True
+    end) bs.
 
 (* A declared output can use its own name. A shadowing output instead
    receives a generated identity, encoded as a runtime number. *)
@@ -4305,13 +4313,14 @@ Inductive TypesExpr (W : world) : frame -> cx -> aexpr -> option ty -> expressio
     (forall n, path = [n] -> slook n (c_locals C) = None) ->
     resolve_sym W (fr_mod F) path = Some tag -> BareTag W tag ->
     TypesExpr W F C (AEPath path None) exp (PlanTag tag [] PlanUnit) (TNom tag [])
-| TypesTag : forall F C exp path brackets args payload tag readings arguments payload_type plan actual,
+| TypesTag : forall F C exp path a args payload tag brackets readings arguments payload_type plan actual,
     resolve_sym W (fr_mod F) path = Some tag -> ~ BareTag W tag ->
+    Syntax.type_application a = Some brackets ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->
     Forall2 (fun r q => fst q = r /\ nlook r (readings ++ c_ty C) = Some (snd q)) (w_reqs W tag) arguments ->
     PayloadOf W tag arguments payload_type -> TagCallPayload W tag args payload ->
     TypesExpr W F C payload (Some payload_type) plan actual -> fits actual payload_type ->
-    TypesExpr W F C (AECall path brackets args) exp (PlanTag tag arguments plan) (TNom tag arguments)
+    TypesExpr W F C (AECall path a args) exp (PlanTag tag arguments plan) (TNom tag arguments)
 | TypesRecord : forall F C exp path brackets given tag readings arguments fields plans,
     resolve_sym W (fr_mod F) path = Some tag -> kind_sym W tag = Some DKTag ->
     Brackets W (fr_mod F) (c_ty C) tag brackets readings ->

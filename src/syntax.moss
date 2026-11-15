@@ -1098,21 +1098,23 @@ assume Std {
         return ast::node0(ast::k_ex_unit());
       }
       let p = parse_path();
-      var run = ast::none();
-      var n = 0;
-      var applied = 0;
+      var bindings = ast::none();
       if accept(tk_lbracket()) {
-        let xs = int_list();
-        parse_app(xs);
-        run = ast::commit(xs);
-        n = xs.length();
-        applied = 1;
+        bindings = parse_bind_items(tk_rbracket());
       }
-      let callee = ast::node4(ast::k_ex_path(), p, run, n, applied);
       if accept(tk_lparen()) {
         let xs = int_list();
         parse_exprs(xs, tk_rparen());
-        return ast::node3(ast::k_ex_call(), callee, ast::commit(xs), xs.length());
+        let callee = ast::node4(ast::k_ex_path(), p, ast::none(), 0, 0);
+        return ast::node4(ast::k_ex_call(), callee, ast::commit(xs), xs.length(), bindings);
+      }
+      var callee = ast::node4(ast::k_ex_path(), p, ast::none(), 0, 0);
+      if ast::is_some(bindings) {
+        callee = ast::type_applied_path(p, bindings);
+        if !ast::is_some(callee) {
+          fail();
+          callee = ast::node4(ast::k_ex_path(), p, ast::none(), 0, 0);
+        }
       }
       if !no_rec {
         if accept(tk_lbrace()) {
@@ -1711,14 +1713,14 @@ assume Std {
     # functor of that name (D55).
     fn parse_bind(): Int {
       let start = tstart.read();
-      let node = parse_bind_inner();
+      let node = parse_bind_items(tk_semi());
       ast::located(node, start, previous_end.read())
     }
 
-    fn parse_bind_inner(): Int {
+    fn parse_bind_items(close: Int): Int {
       let xs = int_list();
       loop {
-        if here(tk_semi()) {
+        if here(close) {
           break;
         }
         if here(tk_eof()) {
@@ -1734,7 +1736,7 @@ assume Std {
           break;
         }
       }
-      expect(tk_semi());
+      expect(close);
       ast::node2(ast::k_st_bind(), ast::commit(xs), xs.length())
     }
 

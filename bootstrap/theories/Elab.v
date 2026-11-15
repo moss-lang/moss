@@ -1020,23 +1020,25 @@ Definition check_relevant (mi : nat) (g : gsym) (a : list (path * spec)) : M uni
    evaluated, in the caller's terms, before the binds.  Each binding
    names a type `f`'s assume nesting requires and binds it to a path,
    as a bracket on any reference does (D22). *)
-Definition check_call_brackets (mi : nat) (g : gsym) (a : list (path * spec)) : M unit :=
-  let! rs := reqs (gs_id g) in
+Definition check_call_brackets (mi : nat) (g : gsym) (a : list (spec * option aexpr)) : M unit :=
+  let! required := reqs (gs_id g) in
   miter (fun b =>
-           let! l := resolve_sym mi (fst b) in
-           match l with
-           | None => err mi ("`" ++ show_path (fst b) ++ "` is not in scope")
-           | Some lg =>
-               if kind_eqb (gs_kind lg) KType && nmem (gs_id lg) rs then
-                 match snd b with
-                 | Spec (Some _) None _ => ret tt
-                 | _ => err mi ("a bracket application on a call of `" ++ gs_name g ++ "` binds `" ++
-                                gs_name lg ++ "` to a method; it binds a type to a type (D89)")
-                 end
-               else
-                 err mi ("a bracket application on a call of `" ++ gs_name g ++ "` binds `" ++ gs_name lg ++
-                         "`, which is not a type `" ++ gs_name g ++ "` requires (D22, D89)")
-           end) a.
+    match fst b with
+    | Spec (Some lhs) None _ =>
+        let! target := rpath mi lhs in
+        match target with
+        | Some (ESym n) =>
+            let! item := sym n in
+            match gs_kind item with
+            | KType => if nmem n required then ret tt
+                       else err mi ("a bracket application on a call of " ++ "`" ++ gs_name g ++ "`" ++
+                                    " binds an unrelated type `" ++ gs_name item ++ "`" ++ " (D22, D89)")
+            | _ => ret tt
+            end
+        | _ => ret tt
+        end
+    | _ => ret tt
+    end) a.
 
 Definition check_totality (mi : nat) (g : gsym) (subst : list (nat * ety)) (e : env) : M unit :=
   match subst with
@@ -2133,7 +2135,9 @@ Definition check_assumes : M unit :=
 Fixpoint has_break_e (x : aexpr) : bool :=
   match x with
   | AEBreak => true
-  | AECall _ _ args => (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
+  | AECall _ bs args => (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args ||
+      match bs with None => false | Some items => existsb (fun q => match snd q with
+        | Some e => has_break_e e | None => false end) items end
   | AEField o _ _ => has_break_e o
   | AEMeth o _ args =>
       has_break_e o || (fix go (l : list aexpr) := match l with [] => false | y :: r => has_break_e y || go r end) args
@@ -2173,7 +2177,9 @@ with has_break_s (s : astmt) : bool :=
 Fixpoint free_names_complete_e (x : aexpr) : list string :=
   match x with
   | AEPath [n] None => [n]
-  | AECall _ _ args => flat_map free_names_complete_e args
+  | AECall _ bs args => flat_map free_names_complete_e args ++
+      match bs with None => [] | Some items => flat_map (fun q =>
+        match snd q with Some e => free_names_complete_e e | None => [] end) items end
   | AEField o _ _ => free_names_complete_e o
   | AEMeth o _ args => free_names_complete_e o +++ flat_map free_names_complete_e args
   | AERec _ _ fs | AEBareRecord fs => flat_map (fun p => match snd p with
@@ -3819,7 +3825,7 @@ with check_args (fuel : nat) (c : cx) (e : env) (nm : string) (sg : fsig) (args 
          (combine (sg_params sg) args)
   end
 
-with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : list aexpr) {struct fuel}
+with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : option (list (spec * option aexpr))) (args : list aexpr) {struct fuel}
     : M (xexpr * ety) :=
   match fuel with 0 => deep | S f =>
   let mi := cx_mod c in
@@ -3831,7 +3837,11 @@ with synth_call (fuel : nat) (c : cx) (e : env) (p : path) (a : sapp) (args : li
       let! g := sym s in
       match gs_kind g with
       | KTag =>
-          let! tm := match a with
+          let! application := match Syntax.type_application a with
+                              | Some app => ret app
+                              | None => err mi "expected a type application on the tag constructor"
+                              end in
+          let! tm := match application with
                      | Some bs => check_relevant mi g bs ;;
                                   let! sb := app_subst 200 e mi bs (tymap e) in ret (sb +++ tymap e)
                      | None => ret (tymap e)

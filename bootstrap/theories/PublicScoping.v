@@ -1290,7 +1290,7 @@ with binditem_scoped F C it wrap C' F' made (D : BindItem W Prog F C it wrap C' 
 Proof.
   (* ---- Ex ---- *)
   - destruct D as [F C exp|F C exp t Th|F C exp n t mu L Nm|F C exp pa s Hl R K|F C exp pa s d n t0 t Hl R D' Ast L
-                  |F C exp pa s d n t0 i t x Hl R D' Ast As T Ex0|F C exp pa a args s bs xs pay y v ty R K B Fx Pay Ea Ey Fi
+                  |F C exp pa s d n t0 i t x Hl R D' Ast As T Ex0|F C exp pa a args s app bs xs pay y v ty R K App B Fx Pay Ea Ey Fi
                   |F C exp pa args f Cf ns th g xs wrap C' R K Def Ctx Dm Needs CT Sig As
                   |F C exp pa args f g xs R K Abs L As|F C exp pa bs args f x t R K Br Dx|F C exp o pa args ox ot x t Eo Mc
                   |F C exp op y lib n m ox ot x t Op Ls Ey Hd Pv|F C exp op l r lib n m ox ot x t Op Ls El Hd Pv

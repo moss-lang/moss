@@ -108,25 +108,23 @@ Proof.
     induction brackets as [|b rest IH]; intros before started Checked; cbn [miter] in Checked.
     - now injection Checked.
     - apply mbind_ok in Checked as ([] & intermediate & Check & Rest).
-      destruct b as [left_path syntax]. cbn [fst snd] in Check.
-      destruct (resolve_sym W (fr_mod F) left_path) as [x|]; [|discriminate Check].
-      destruct (kind_is W x DKType && nmem x (w_reqs W f)); [|discriminate Check].
-      destruct syntax as [[right|] [member|] application]; try discriminate Check.
-      injection Check as <-. now apply (IH _ _ Rest).
+      destruct b as [[[lhs|] [member|] app] rhs]; cbn [fst] in Check;
+        try (injection Check as <-; now apply (IH _ _ Rest)).
+      destruct (resolve_sym W (fr_mod F) lhs) as [x|] in Check;
+        try (injection Check as <-; now apply (IH _ _ Rest)).
+      destruct (kind_is W x DKType && negb (nmem x (w_reqs W f))) in Check;
+        [discriminate Check|injection Check as <-; now apply (IH _ _ Rest)].
   }
   subst started.
   assert (Brackets : CallBrackets W (fr_mod F) f brackets).
   {
-    apply Forall_forall. intros [part spec] Present.
-    all: destruct (EaFunctionSound.miter_member_run _ _ _ _ _ Checked _ Present)
+    apply Forall_forall. intros [[[lhs|] [member|] app] rhs] Present; cbn [fst]; try exact I.
+    intros x Res Kind.
+    destruct (EaFunctionSound.miter_member_run _ _ _ _ _ Checked _ Present)
       as (started & checked & Item).
-    all: cbn [fst snd] in Item.
-    all: destruct (resolve_sym W (fr_mod F) part) as [x|] eqn:ResolvedPart; [|discriminate Item].
-    all: destruct (kind_is W x DKType && nmem x (w_reqs W f)) eqn:RequiredType; [|discriminate Item].
-    all: destruct spec as [[right|] [member|] application]; try discriminate Item.
-    all: apply andb_true_iff in RequiredType as [Kind Required].
-    all: split; [exists x; split; [exact ResolvedPart|split; [now apply kind_is_spec|now apply nmem_spec]]|
-      exists right, application; reflexivity].
+    cbn [fst] in Item. rewrite Res in Item.
+    rewrite (proj2 (kind_is_spec W x DKType) Kind) in Item.
+    destruct (nmem x (w_reqs W f)) eqn:Required; [now apply nmem_spec|discriminate Item].
   }
   destruct (Rec _ _ _ _ _ _ _ Run) as [Backward TypedCall].
   split; [exact Backward|]. intros Valid Post.

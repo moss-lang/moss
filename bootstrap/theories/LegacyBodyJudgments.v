@@ -150,9 +150,10 @@ Inductive Ex (W : world) (P : program) : frame -> cx -> aexpr -> option ty -> ex
                    Numbering F0 None []) ->
     Ex W P F C (AEPath pa None) exp x t
 (* a tag applied to its payload *)
-| ExTag : forall F C exp pa a args s bs xs pay y v ty,
+| ExTag : forall F C exp pa a args s app bs xs pay y v ty,
     resolve_sym W (fr_mod F) pa = Some s -> ~ BareTag W s ->
-    Brackets W (fr_mod F) (c_ty C) s a bs ->
+    Syntax.type_application a = Some app ->
+    Brackets W (fr_mod F) (c_ty C) s app bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
     TagCallPayload W s args y -> Ex W P F C y (Some pay) v ty -> fits ty pay ->

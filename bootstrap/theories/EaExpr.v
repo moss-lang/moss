@@ -261,7 +261,8 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
       let* d := lift (w_decl W s) "internal: unknown symbol" in
       match d_ast d with
       | ADTag _ _ arity _ =>
-          let* bs := pure (brackets W fuel (fr_mod F) (c_ty C) s a) in
+          let* application := lift (Syntax.type_application a) "expected a type application on the tag constructor" in
+          let* bs := pure (brackets W fuel (fr_mod F) (c_ty C) s application) in
           let* xs := pure (rmap (fun r => let! t := ropt (nlook r (bs ++ c_ty C))
                                                 ("type " ++ bq (sym_name W r) ++ " (required by " ++ qs W s ++
                                                  ") is not available in the context here") in Ok (r, t)) (w_reqs W s)) in
@@ -278,18 +279,18 @@ Fixpoint ex (n : nat) (F : frame) (C : cx) (e : aexpr) (exp : option ty) {struct
           match a with
           | Some bs =>
               let* _ := miter (fun b =>
-                         match resolve_sym W (fr_mod F) (fst b) with
-                         | None => fail (bq (show_path (fst b)) ++ " is not in scope")
-                         | Some x =>
-                             if kind_is W x DKType && nmem x (w_reqs W s) then
-                               match snd b with
-                               | Spec (Some _) None _ => ret tt
-                               | _ => fail ("a bracket application on a call of " ++ qs W s ++ " binds " ++ qs W x ++
-                                            " to a method; it binds a type to a type (D89)")
-                               end
-                             else fail ("a bracket application on a call of " ++ qs W s ++ " binds " ++ qs W x ++
-                                        ", which is not a type " ++ qs W s ++ " requires (D22, D89)")
-                         end) bs in
+                match fst b with
+                | Spec (Some lhs) None _ =>
+                    match resolve_sym W (fr_mod F) lhs with
+                    | Some x =>
+                        if kind_is W x DKType && negb (nmem x (w_reqs W s)) then
+                          fail ("a bracket application on a call of " ++ qs W s ++ " binds " ++ qs W x ++
+                                ", which is not a type " ++ qs W s ++ " requires (D22, D89)")
+                        else ret tt
+                    | None => ret tt
+                    end
+                | _ => ret tt
+                end) bs in
               r_ex R F C (Syntax.call_block pa bs argl) None
           | None =>
               match body with

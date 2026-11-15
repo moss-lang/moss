@@ -1,0 +1,45 @@
+type Item;
+
+assume Std {
+  val offset: Int;
+  fn scale(value: Int): Int;
+  fn twice(value: Int): Int { 2 * value }
+  fn digit(n: Int) { putchar((n + char::digit0.code()).char()); }
+}
+
+assume Std, offset, scale {
+  fn compute(value: Int): Int { offset + scale(value) }
+}
+
+functor Settings: Std -> offset, scale {
+  bind offset = 1, scale = twice;
+}
+
+assume Item {
+  tag Box[Item](Item);
+}
+
+assume ReferenceBase {
+  fn main() {
+    bind StdBase;
+    bind offset = 1, scale = twice;
+    var local = 1;
+
+    # Evaluate the argument first, then read local for the value and closure.
+    digit(compute[offset = local, scale = (x) => x + local]({ local = 3; 2 }));
+    digit(compute(2));
+    digit(compute[offset = local, scale = twice](2));
+    digit(compute[Settings](3));
+
+    # A call's bindings can evaluate expressions with enclosing control flow.
+    loop {
+      compute[offset = { break; 0 }](0);
+      digit(9);
+    }
+
+    # The same spelling on a tag is a type application.
+    let Box(value) = Box[Item=Int](4);
+    digit(value);
+    putchar(char::newline);
+  }
+}

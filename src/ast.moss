@@ -34,7 +34,7 @@ assume Std {
   fn k_ex_unit(): Int { 8 }              # ()
   fn k_ex_this(): Int { 9 }              # this
   fn k_ex_path(): Int { 10 }             # a=path b=app run c=app len d=applied
-  fn k_ex_call(): Int { 11 }             # a=callee b=args run c=len
+  fn k_ex_call(): Int { 11 }             # a=callee b=args run c=len d=optional bind statement
   fn k_ex_field(): Int { 12 }            # a=object b=name c=bare only (1)
   fn k_ex_method(): Int { 13 }           # a=receiver b=path c=args run d=len
   fn k_ex_record(): Int { 14 }           # a=constructor or none b=run of ex_rfield c=len
@@ -206,6 +206,25 @@ assume Std {
 
     fn node2(kind: Int, a: Int, b: Int): Int {
       node4(kind, a, b, none(), none())
+    }
+
+    # Outside a function call these brackets must be a type application.
+    fn type_applied_path(path: Int, bindings: Int): Int {
+      let types = int_list();
+      var i = 0;
+      while i < b_of(bindings) {
+        let item = kid_at(a_of(bindings), i);
+        let lhs = a_of(item);
+        let rhs = b_of(item);
+        if is_some(b_of(lhs)) { return none(); }
+        if is_some(c_of(lhs)) { return none(); }
+        if !is_some(rhs) { return none(); }
+        if !is_kind(rhs, k_ex_path()) { return none(); }
+        let spec = node4(k_spec(), a_of(rhs), none(), b_of(rhs), c_of(rhs));
+        types.push(node2(k_binding(), a_of(lhs), spec));
+        i = i + 1;
+      }
+      node4(k_ex_path(), path, commit(types), types.length(), 1)
     }
 
     fn node1(kind: Int, a: Int): Int {

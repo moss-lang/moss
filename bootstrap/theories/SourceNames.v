@@ -45,7 +45,7 @@ Fixpoint pat_ok (p : apat) : bool :=
 Fixpoint expr_ok (e : aexpr) : bool :=
   match e with
   | AEPath p a => path_ok p && app_ok a
-  | AECall p a es => path_ok p && app_ok a && forallb expr_ok es
+  | AECall p a es => path_ok p && optional (forallb (fun b => spec_ok (fst b) && optional expr_ok (snd b))) a && forallb expr_ok es
   | AEField o _ _ => expr_ok o
   | AEMeth o p es => expr_ok o && path_ok p && forallb expr_ok es
   | AEBareRecord fs => forallb (fun f => optional expr_ok (snd f)) fs

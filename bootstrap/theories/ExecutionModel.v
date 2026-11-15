@@ -2652,6 +2652,8 @@ Inductive LetStmt : astmt -> name -> option aty -> aexpr -> lmut -> Prop :=
 Inductive Breaks : aexpr -> Prop :=
 | BkBreak : Breaks AEBreak
 | BkCall : forall p a args y, In y args -> Breaks y -> Breaks (AECall p a args)
+| BkCallBind : forall p bs args target y, In (target, Some y) bs -> Breaks y ->
+    Breaks (AECall p (Some bs) args)
 | BkField : forall o n, Breaks o -> Breaks (AEField o n false)
 | BkMethRecv : forall o p args, Breaks o -> Breaks (AEMeth o p args)
 | BkMethArg : forall o p args y, In y args -> Breaks y -> Breaks (AEMeth o p args)
@@ -2824,12 +2826,16 @@ Inductive Demand (W : world) (C0 : cx) (wanted : list item)
     Demand W C0 wanted ((u, matching) :: used) Cm wrap Cf ->
     Demand W C0 wanted used C (fun x => XApply u th sm (wrap x)) Cf.
 
-(* D89: the bracket application on a call of the fn f: each binding names
-   a type symbol among f's requirements and binds it to a type by name. *)
-Definition CallBrackets (W : world) (p : string) (f : nat) (bs : list (path * spec)) : Prop :=
-  Forall (fun b => (exists x, resolve_sym W p (fst b) = Some x /\ kind_sym W x = Some DKType /\
-                              In x (w_reqs W f)) /\
-                   exists rp ra, snd b = Spec (Some rp) None ra) bs.
+(* Only type bindings carry D89's relevance condition. Other items
+   use the ordinary binding rules in the expansion. *)
+Definition CallBrackets (W : world) (p : string) (f : nat)
+    (bs : list (spec * option aexpr)) : Prop :=
+  Forall (fun b => match fst b with
+    | Spec (Some lhs) None _ =>
+        forall x, resolve_sym W p lhs = Some x -> kind_sym W x = Some DKType ->
+          In x (w_reqs W f)
+    | _ => True
+    end) bs.
 
 (* Main judgments.
    `Ex W P F C e exp x t`: in frame F and context C, the expression e,
@@ -2861,9 +2867,10 @@ Inductive Ex (W : world) (P : xprogram) : frame -> cx -> aexpr -> option ty -> x
                    fr_mod F0 = d_mod d) ->
     Ex W P F C (AEPath pa None) exp (XConst s x) t
 (* a tag applied to its payload *)
-| ExTag : forall F C exp pa a args s bs xs pay y v ty,
+| ExTag : forall F C exp pa a args s app bs xs pay y v ty,
     resolve_sym W (fr_mod F) pa = Some s -> kind_sym W s = Some DKTag ->
-    Brackets W (fr_mod F) (c_ty C) s a bs ->
+    Syntax.type_application a = Some app ->
+    Brackets W (fr_mod F) (c_ty C) s app bs ->
     Forall2 (fun r ra => fst ra = r /\ nlook r (bs ++ c_ty C) = Some (snd ra)) (w_reqs W s) xs ->
     PayloadOf W s xs pay ->
     args = [y] -> Ex W P F C y (Some pay) v ty -> fits ty pay ->

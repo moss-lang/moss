@@ -84,13 +84,34 @@ Definition grouped (p : parens) : form :=
                      (check_map (fun bs => tuple_binding bs None) (bindings fs)) None None
   end.
 
-Definition call_form (r : reference) (p : parens) : form :=
-  let '(Ref offset pa app) := r in
-  let b := match app with
+Record expr_reference := ExprRef {
+  expr_ref_offset : nat;
+  expr_ref_path : path;
+  expr_ref_bindings : option (list (checked (spec * option aexpr)))
+}.
+
+Definition expr_ref_application (r : expr_reference) : checked reference :=
+  let! bs := check_optional (option_map check_list (expr_ref_bindings r)) in
+  match type_application bs with
+  | Some app => Checked (Ref (expr_ref_offset r) (expr_ref_path r) app)
+  | None => Invalid "expected a type application" (expr_ref_offset r)
+  end.
+
+Definition expr_reference_form (r : expr_reference) : form :=
+  match expr_ref_application r with
+  | Checked tr => reference_form tr
+  | Invalid msg at_ => expression (expr_ref_offset r) (Invalid msg at_)
+  end.
+
+Definition expr_call_form (r : expr_reference) (p : parens) : form :=
+  let '(ExprRef offset pa call_bindings) := r in
+  let b := match call_bindings with
     | None => check_map (fun bs => positional_binding pa bs None) (bindings (parens_items p))
     | Some _ => Invalid "a tag binding cannot have an application" offset
     end in
-  Form offset (check_map (AECall pa app) (expressions (parens_items p))) b None None.
+  Form offset
+    (let! bs := check_optional (option_map check_list call_bindings) in
+     check_map (AECall pa bs) (expressions (parens_items p))) b None None.
 
 Record field := Field {
   expr_field : checked (name * option aexpr);
@@ -111,6 +132,12 @@ Definition short_reference (r : reference) (ann : option (nat * aty)) : field :=
             Field (Invalid err (ref_offset r)) (Invalid err (ref_offset r))
   end.
 
+Definition expr_short_reference (r : expr_reference) (ann : option (nat * aty)) : field :=
+  match expr_ref_application r with
+  | Checked tr => short_reference tr ann
+  | Invalid msg at_ => Field (Invalid msg at_) (Invalid msg at_)
+  end.
+
 Definition long_field (x : name) (f : form) : field :=
   Field (check_map (fun e => (x, Some e)) (as_expr f))
         (check_map (fun b => (x, b)) (as_binding f)).
@@ -129,6 +156,12 @@ Definition record_form (offset : nat) (r : option reference) (fields : list fiel
          end)
     end in
   Form offset e b None None.
+
+Definition expr_record_form (r : expr_reference) (fields : list field) : form :=
+  match expr_ref_application r with
+  | Checked tr => record_form (ref_offset tr) (Some tr) fields
+  | Invalid msg at_ => expression (expr_ref_offset r) (Invalid msg at_)
+  end.
 
 Definition literal_form (t : token) : form :=
   Form (toff t) (Checked (AELit (lit_norm (tx t))))

@@ -167,7 +167,8 @@ Fixpoint read_expr (fuel : nat) (x : sx) : res aexpr :=
       | SL false [SA "k"; SA p; a] =>
           let* a' := read_app k a in Good (AEPath (split_path p) a')
       | SL false [SA "l"; SL false [SA "k"; SA p; a]; SL true args] =>
-          let* a' := read_app k a in
+          let* a' := match a with SA "_" => Good None | _ =>
+                       let* bs := read_bind k a in Good (Some bs) end in
           let* args' := rmap (read_expr k) args in
           Good (AECall (split_path p) a' args')
       | SL false [SA "m"; o; SA f] =>
@@ -465,7 +466,8 @@ Fixpoint dexpr (e : aexpr) : sx :=
   | AEUnit => nd "i" []
   | AEThis => nd "j" []
   | AEPath p a => nd "k" [dpath p; dapp a]
-  | AECall p a args => nd "l" [nd "k" [dpath p; dapp a]; sl (map dexpr args)]
+  | AECall p a args => nd "l" [nd "k" [dpath p; dopt (fun bs =>
+      nd "y" [sl (map (fun '(s, v) => nd "z" [dspec s; dopt dexpr v]) bs)]) a]; sl (map dexpr args)]
   | AEField o f bare => nd "m" (if bare then [dexpr o; SA f; SA "bare"] else [dexpr o; SA f])
   | AEMeth o p args => nd "n" [dexpr o; dpath p; sl (map dexpr args)]
   | AEBareRecord fs => nd "o" [SA "_"; sl (map (fun '(x, v) => nd "p" [SA x; dopt dexpr v]) fs)]

@@ -155,7 +155,12 @@ assume Std {
         dump_app(ast::b_of(id), ast::c_of(id));
       } else if k == ast::k_ex_call() {
         sp();
-        dump(ast::a_of(id));
+        open_tag(ast::k_ex_path());
+        sp();
+        put_path(ast::a_of(ast::a_of(id)));
+        sp();
+        opt_node(ast::d_of(id));
+        close_tag();
         sp();
         dump_run(ast::b_of(id), ast::c_of(id));
       } else if k == ast::k_ex_field() {
