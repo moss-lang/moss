@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import cache, wraps
 from itertools import count
 from pathlib import Path
+from shutil import copytree
 from tempfile import TemporaryDirectory
 from threading import Lock
 
@@ -268,12 +269,28 @@ def oracle_command(args):
     return output(with_maximum_stack([oracle_path(), *args]), cwd=repo(), env=oracle_env())
 
 
-def oracle(entry, args):
-    return oracle_command([entry, *args])
+@once
+def reference_example_prelude():
+    # Public examples assume Base. Give them the reference host's smaller
+    # entry context when running them through the oracle.
+    lib = fresh("reference-lib")
+    copytree(repo() / "lib", lib)
+    prelude = lib / "prelude.moss"
+    text = prelude.read_text(encoding="utf-8")
+    prelude.write_text(
+        text.replace('use Base;', 'use ReferenceBase as Base;', 1),
+        encoding="utf-8",
+    )
+    return prelude
 
 
-def oracle_run(entry, args):
-    out = oracle(entry, args)
+def oracle(entry, args, *, prelude=None):
+    options = [] if prelude is None else ["--prelude", prelude]
+    return oracle_command([*options, entry, *args])
+
+
+def oracle_run(entry, args, *, prelude=None):
+    out = oracle(entry, args, prelude=prelude)
     assert out.code == 0, f"the oracle on {entry}: {out.stderr}"
     return out.text()
 

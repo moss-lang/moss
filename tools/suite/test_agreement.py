@@ -7,6 +7,7 @@ from suite.support import (
     moss_files,
     oracle_command,
     parallel_map,
+    reference_example_prelude,
 )
 
 # The two front ends accept and reject the same programs.
@@ -160,7 +161,10 @@ def compiler(entry):
 
 
 def oracle(entry):
-    out = oracle_command(["--elab-only", entry])
+    options = ["--elab-only"]
+    if entry.startswith("examples/"):
+        options.extend(["--prelude", reference_example_prelude()])
+    out = oracle_command([*options, entry])
     match out.code:
         case 0:
             verdict = Accept

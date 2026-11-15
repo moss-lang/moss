@@ -1,9 +1,7 @@
-from shutil import copytree
-
 from suite.support import (
-    fresh,
-    oracle_command,
+    oracle_run,
     read,
+    reference_example_prelude,
     repo,
     run,
     runnable_examples,
@@ -24,21 +22,10 @@ def test_examples_match_their_goldens():
 
 
 def test_the_oracle_matches_the_goldens():
-    # Run the public examples under the reference host's smaller entry
-    # context. Only this test's copy of the prelude aliases it to Base.
-    lib = fresh("reference-lib")
-    copytree(repo() / "lib", lib)
-    prelude = lib / "prelude.moss"
-    text = prelude.read_text(encoding="utf-8")
-    prelude.write_text(
-        text.replace('use Base;', 'use ReferenceBase as Base;', 1),
-        encoding="utf-8",
-    )
+    prelude = reference_example_prelude()
     for name in runnable_examples():
         golden = read(f"tests/examples/stdout/{name}.txt")
-        out = oracle_command(["--prelude", prelude, f"examples/{name}.moss"])
-        assert out.code == 0, f"{name}: {out.stderr}"
-        assert out.text() == golden, f"{name}"
+        assert oracle_run(f"examples/{name}.moss", [], prelude=prelude) == golden, name
 
 
 # The other direction of the listing: a golden once outlived its example

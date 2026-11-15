@@ -12,6 +12,7 @@ from suite.support import (
     oracle_rejects,
     oracle_run,
     read,
+    reference_example_prelude,
     rejects,
     rejects_with,
     run,
@@ -151,7 +152,10 @@ SIZE_STD_OUT = "-294967296\n4\n2147483647\n4\n"
 
 
 def test_hello_world():
-    agree("examples/hello.moss", [], "Hello, world!\n")
+    entry = "examples/hello.moss"
+    expected = "Hello, world!\n"
+    assert run(entry, []) == expected
+    assert oracle_run(entry, [], prelude=reference_example_prelude()) == expected
 
 
 # `test_run.TestExamples` is `examples.rs`.

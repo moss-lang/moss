@@ -1,12 +1,12 @@
 import "../../lib/wasi.moss" use WasiStd;
 import "../../lib/array.moss" as array use ArrayHandle, Arrays;
-import "../../lib/wasm.moss" use Gc, ArrayRef;
+import "../../lib/wasm.moss" use Wasm, Gc, ArrayRef, unreachable;
 import "../../lib/size.moss" as size use Size, .size, .int;
 import "../../lib/wasichar.moss" use WasiCharConsts;
 import "../../lib/wasibyte.moss" use WasiByteConsts;
 import "../../lib/wasistd.moss" use Branch, WasiBasics, WasiContainers, WasiOutput,
   WasiFiles, WasiFloats32, GcArrays;
-import "../../lib/wasm.moss" use Wasm;
+import "../../lib/std.moss" use abort;
 import "../../lib/wasip1.moss" use WasiCore;
 
 # `Float` (D67): written once against `Std`, run at f64 — what `WasiStd`
@@ -110,6 +110,7 @@ functor WasiStd32: Wasm, Gc, WasiCore, Branch -> Std {
   bind WasiBasics;
   bind WasiContainers;
   bind WasiOutput;
+  bind abort = unreachable;
   bind WasiFiles;
   bind WasiFloats32;
   bind size::Size = Int;
