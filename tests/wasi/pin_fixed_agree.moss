@@ -16,6 +16,8 @@
 # `MakeTok[]` is fixed in `Tok`; `CharTok`'s body pins `Tok` to `Char`,
 # and it is bound where `Tok` means `Char`, so the pin agrees with the
 # bind site. Prints `q`.
+import "../../lib/base.moss" use ReferenceBase;
+
 type Tok;
 
 assume Std, Tok {

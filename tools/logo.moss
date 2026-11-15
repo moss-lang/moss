@@ -4,6 +4,7 @@
 # SEED is an unsigned 32-bit decimal. The four sliders take 0–100.
 # Quote the #rrggbb colors. SHAPE defaults to both (Rounded wrap).
 # With no arguments, use the starting variation from the editor.
+import "base.moss" use ReferenceBase;
 import "array.moss" use Item, Array, .arrayed;
 import "wasm.moss" as wasm;
 import "wasip1.moss" use proc_exit;

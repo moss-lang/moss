@@ -124,11 +124,11 @@ primitive NAME]`, `[out of fuel]`. Rejections are `[front end: MSG]` and
 | 2 | usage |
 
 **WASI contexts.** `WasiCore` declares the calls the reference host
-implements. `ReferenceBase` combines it with Wasm, branching, and GC and
-is available through the prelude. Use it with `StdBase` for programs
-that run on both back ends. `Wasi` and `Base` offer the full Preview 1
-declarations to compiled programs. The reference checks each assumption
-of `main` during elaboration, including unused assumptions.
+implements. Tests can import `ReferenceBase` from `base.moss`, which
+combines `WasiCore` with Wasm, branching, and GC. The public prelude
+provides `Base`, which offers the full Preview 1 declarations to compiled
+programs. The reference checks each assumption of `main` during
+elaboration, including unused assumptions.
 
 **Linear memories (D79).** Base selects the memory from the resolved
 `Memory` argument of each `Addr` method. Each distinct type names its own

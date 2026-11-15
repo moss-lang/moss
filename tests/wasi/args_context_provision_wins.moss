@@ -14,6 +14,8 @@
 # a fn call's and a defined attached call's arguments in Γ ⊕ D).
 #   Before #72: Audit and oracle xm (ExCallD read the arguments in Γ ⊕ D,
 #   MCAttachedDefined in Γ).
+import "../../lib/base.moss" use ReferenceBase;
+
 tag Meter(Int);
 type Q;
 fn .describe(): Char;

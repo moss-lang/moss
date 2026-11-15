@@ -5146,13 +5146,11 @@ the platform root context during checking, including an imported function
 
 ## Platform entry contexts
 
-`lib/base.moss` names the full compiled context `Base` with
-`Wasm`, `Wasi`, `Branch`, and `Gc`.
-`ReferenceBase` uses `WasiCore`, the seven Preview 1
-calls the reference host implements. The prelude imports both contexts
-and `StdBase`. Programs that run on both back ends can assume
-`ReferenceBase` and bind `StdBase`. Reusable code can assume
-`Std` or narrower contexts.
+The prelude imports `Base` and `StdBase`. Compiled programs can assume
+`Base` (`Wasm`, `Wasi`, `Branch`, and `Gc`) at entry and bind `StdBase`.
+Reusable code can assume `Std` or narrower contexts. The reference
+tests explicitly import `ReferenceBase` from `lib/base.moss`. It uses
+`WasiCore`, the seven Preview 1 calls the reference host implements.
 
 The build checks `main`'s body under its assumptions, then links it
 against the platform. The entry check uses ordinary call instantiation

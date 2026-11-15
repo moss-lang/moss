@@ -16,7 +16,7 @@ assume Std {
   }
 }
 
-assume ReferenceBase {
+assume Base {
   fn main() {
     bind StdBase;
     bind c=char::h;

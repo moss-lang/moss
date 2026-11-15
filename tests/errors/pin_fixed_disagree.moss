@@ -16,6 +16,8 @@
 # before `bind MakeTok = CharTok`, so CharTok's pin `Tok = Char`
 # disagrees with MakeTok's fixed reading of `Tok`; accepting the bind
 # would read a Char as a Bool.
+import "../../lib/base.moss" use ReferenceBase;
+
 type Tok;
 
 assume Std, Tok {

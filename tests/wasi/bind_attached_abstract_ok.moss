@@ -5,6 +5,8 @@
 # `fn Meter.describe();`, is a key the context provides (D36,
 # MCAttachedAbstract): binding it is how it gets a meaning, so it stays
 # legal. Verdicts: Audit accepts; oracle prints x; native prints x.
+import "../../lib/base.moss" use ReferenceBase;
+
 tag Meter(Int);
 
 assume Std {

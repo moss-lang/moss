@@ -9,6 +9,8 @@
 # force, so it is the attached method (m).
 # Verdicts: Audit m (PrFamily checks the arguments in Γ, before and after
 # #72); oracle m; native m.
+import "../../lib/base.moss" use ReferenceBase;
+
 tag Meter(Int);
 type Q;
 fn .describe(): Char;

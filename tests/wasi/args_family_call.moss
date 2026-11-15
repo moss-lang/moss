@@ -3,6 +3,8 @@
 # call; its argument `d.describe()` is checked in the caller's context,
 # where the application is not in force, so it is the attached method.
 # Prints `m`.
+import "../../lib/base.moss" use ReferenceBase;
+
 tag Meter(Int);
 type Q;
 fn .describe(): Char;

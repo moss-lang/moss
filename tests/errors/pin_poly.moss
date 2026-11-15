@@ -12,6 +12,8 @@
 # of a polymorphic input stays forbidden. `MakeTok[Tok]` takes `Tok` from
 # each application, so a body that rebinds it would give `tok` another
 # type than the one each application reads (D84 3d).
+import "../../lib/base.moss" use ReferenceBase;
+
 type Tok;
 
 assume Std, Tok {

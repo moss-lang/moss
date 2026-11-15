@@ -7,6 +7,8 @@
 # attached method (D77). Method resolution is static, so this bind is the
 # detached symbol even though Q turns out to be the tag Meter: still legal.
 # Verdicts: Audit accepts; oracle prints mxm; native prints mxm.
+import "../../lib/base.moss" use ReferenceBase;
+
 tag Meter(Int);
 fn .describe();
 type Q;

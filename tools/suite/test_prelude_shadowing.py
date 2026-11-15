@@ -125,7 +125,8 @@ def test_unshadowed_prelude_defaults_remain_available():
         [
             (
                 "main.moss",
-                """type Local;
+                """import "base.moss" use ReferenceBase;
+type Local;
 assume ReferenceBase { fn main() { bind StdBase; print("defaults"); putchar(char::newline); } }
 """,
             )
@@ -139,12 +140,14 @@ def test_shadowing_does_not_change_bindings_in_other_modules():
         [
             (
                 "helper.moss",
-                """assume ReferenceBase { fn report() { bind StdBase; print("prelude"); putchar(char::newline); } }
+                """import "base.moss" use ReferenceBase;
+assume ReferenceBase { fn report() { bind StdBase; print("prelude"); putchar(char::newline); } }
 """,
             ),
             (
                 "main.moss",
                 """import "./helper.moss" use report;
+import "base.moss" use ReferenceBase;
 assume ReferenceBase {
   fn print() { bind StdBase; println("local"); }
   fn main() { bind StdBase; print(); report(); print(); }
@@ -195,11 +198,12 @@ def test_implicit_prelude_names_are_not_reexported():
 def test_explicit_named_imports_can_reexport_prelude_symbols():
     accepts(
         [
-            ("helper.moss", 'import "base.moss" use ReferenceBase;\n'),
+            ("helper.moss", 'import "base.moss" use Base;\n'),
             (
                 "main.moss",
-                """import "./helper.moss" use ReferenceBase;
-assume ReferenceBase { fn main() {} }
+                """import "./helper.moss" use Base;
+assume Base { fn helper() {} }
+fn main() {}
 """,
             ),
         ],
@@ -210,13 +214,18 @@ assume ReferenceBase { fn main() {} }
 def test_a_named_import_promotes_a_glob_binding_to_an_export():
     accepts(
         [
-            ("helper.moss", 'import "base.moss" use *;\nimport "base.moss" use ReferenceBase;\n'),
+            ("helper.moss", 'import "base.moss" use *;\nimport "base.moss" use Base;\n'),
             (
                 "main.moss",
-                """import "./helper.moss" use ReferenceBase;
-assume ReferenceBase { fn main() {} }
+                """import "./helper.moss" use Base;
+assume Base { fn helper() {} }
+fn main() {}
 """,
             ),
         ],
         "",
     )
+
+
+def test_reference_base_requires_an_explicit_import():
+    rejects([("main.moss", "assume ReferenceBase { fn main() {} }\n")], "!B ")
